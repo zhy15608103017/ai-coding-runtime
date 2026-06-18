@@ -2,7 +2,7 @@
 
 AI Coding Runtime is a local-first orchestration layer for AI coding tasks.
 
-V0 currently covers the Phase 1 runtime skeleton and the Phase 2 gateway skeleton:
+V0 currently covers the Phase 1 runtime skeleton through the Phase 5 provider-adapter surface:
 
 - create a structured runtime plan from a user request
 - classify tasks into `cheap`, `standard`, and `premium` model tiers
@@ -16,8 +16,10 @@ V0 currently covers the Phase 1 runtime skeleton and the Phase 2 gateway skeleto
 - include a deterministic planning prompt for host tools and future supervisor calls
 - include classifier, routing trace, model registry, escalation policy, and budget metadata
 - refuse persisted execution when budget or routing policy metadata says a run is not allowed
+- expose Phase 5 provider adapters for OpenAI-compatible, Anthropic, Gemini, and local placeholder models
+- record model usage and estimated provider cost into run traces when generation is linked to a run
 
-V0 does not call real model providers or apply patches. Those capabilities are planned after the planner, router, storage, and gateway contracts are stable.
+V0 can call configured model providers directly through the Phase 5 provider interface, but it still does not run worker execution loops or apply patches. Worker execution, workspace patch validation, and full verification are planned for later phases.
 Runs that include medium or high risk tasks are stored as `approval_required`. V0 provides a minimal approval input through CLI, HTTP, and MCP; later phases will add execution after approval and richer approval UI.
 Phase 4 routing is deterministic: file-editing tasks route to at least `standard`, final verification routes to `premium`, and failed low-tier attempts can be represented with escalation trace records.
 Explicit read-only planning requests such as `plan only`, `read-only`, or `不修改文件` produce low-risk plans that can be stored as `planned` without an approval gate.
@@ -30,6 +32,8 @@ node ./bin/ai-coding-runtime.js run "实现登录限流并补充测试" --json
 node ./bin/ai-coding-runtime.js status <run-id> --json
 node ./bin/ai-coding-runtime.js approve <run-id> --json
 node ./bin/ai-coding-runtime.js report <run-id> --markdown
+node ./bin/ai-coding-runtime.js provider-health --json
+node ./bin/ai-coding-runtime.js generate "Say hello" --provider local --json
 node ./bin/ai-coding-runtime.js start --host 127.0.0.1 --port 3847
 node ./bin/ai-coding-runtime.js mcp
 ```
@@ -67,6 +71,44 @@ Copy `runtime.config.example.json` to `runtime.config.json` and adjust it:
       "maxRetryCount": 8
     }
   },
+  "providers": {
+    "defaultProvider": "local",
+    "retryPolicy": {
+      "maxRetries": 2,
+      "initialDelayMs": 250,
+      "maxDelayMs": 2000,
+      "timeoutMs": 60000
+    },
+    "entries": {
+      "openai-compatible": {
+        "type": "openai-compatible",
+        "baseUrl": "https://api.openai.com/v1",
+        "apiKeyEnv": "OPENAI_API_KEY",
+        "defaultModel": null,
+        "models": []
+      },
+      "anthropic": {
+        "type": "anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "apiKeyEnv": "ANTHROPIC_API_KEY",
+        "apiVersion": "2023-06-01",
+        "defaultModel": null,
+        "models": []
+      },
+      "gemini": {
+        "type": "gemini",
+        "baseUrl": "https://generativelanguage.googleapis.com",
+        "apiKeyEnv": "GEMINI_API_KEY",
+        "defaultModel": null,
+        "models": []
+      },
+      "local": {
+        "type": "local",
+        "defaultModel": "local-placeholder",
+        "models": ["local-placeholder"]
+      }
+    }
+  },
   "verification": {
     "commands": []
   }
@@ -79,6 +121,17 @@ Environment variables can override local config:
 - `AI_CODING_RUNTIME_HOST`
 - `AI_CODING_RUNTIME_PORT`
 - `AI_CODING_RUNTIME_API_TOKEN`
+- `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`
+- `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`
+- `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_BASE_URL`, `GEMINI_MODEL`
+
+With a real provider configured, a manual smoke check can run a generation without enabling worker execution:
+
+```bash
+$env:OPENAI_API_KEY="<key>"
+$env:OPENAI_MODEL="<model>"
+node ./bin/ai-coding-runtime.js generate "Reply with one short sentence." --provider openai-compatible --json
+```
 
 ## HTTP
 
@@ -98,6 +151,8 @@ V0 HTTP endpoints:
 - `POST /api/runs/:id/approve`
 - `POST /api/runs/:id/cancel`
 - `POST /api/verify`
+- `GET /api/providers/health`
+- `POST /api/model/generate`
 - `GET /api/runs/:id/report`
 - `POST /mcp`
 
@@ -116,5 +171,8 @@ The MCP gateway exposes:
 - `runtime_report`
 - `runtime_cancel`
 - `runtime_approve`
+- `runtime_provider_health`
+- `runtime_model_generate`
 
 `runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`.
+`runtime_model_generate` calls a configured provider through the normalized Phase 5 interface. When given `runId`, it appends model usage, estimated cost, finish reason, and request metadata to the run trace.

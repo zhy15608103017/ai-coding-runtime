@@ -286,15 +286,15 @@ expected_output:
 
 **Tasks:**
 
-- [ ] Define a common `generate` interface with messages, tools, response schema, temperature, max tokens, and timeout.
-- [ ] Define normalized model response shape with text, structured output, token usage, cost estimate, finish reason, and raw metadata.
-- [ ] Implement provider config loading from environment variables and config file.
-- [ ] Implement OpenAI-compatible provider.
-- [ ] Implement Anthropic-compatible provider.
-- [ ] Implement Gemini-compatible provider.
-- [ ] Add provider health command.
-- [ ] Add retry policy for transient provider failures.
-- [ ] Add clear failure messages for missing API keys and unsupported models.
+- [x] Define a common `generate` interface with messages, tools, response schema, temperature, max tokens, and timeout.
+- [x] Define normalized model response shape with text, structured output, token usage, cost estimate, finish reason, and raw metadata.
+- [x] Implement provider config loading from environment variables and config file.
+- [x] Implement OpenAI-compatible provider.
+- [x] Implement Anthropic-compatible provider.
+- [x] Implement Gemini-compatible provider.
+- [x] Add provider health command.
+- [x] Add retry policy for transient provider failures.
+- [x] Add clear failure messages for missing API keys and unsupported models.
 
 **Acceptance Criteria:**
 

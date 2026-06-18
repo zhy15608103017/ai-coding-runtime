@@ -1,9 +1,14 @@
 export function createReport(record) {
   const tasks = record.plan.tasks;
+  const modelCalls = Array.isArray(record.modelCalls) ? record.modelCalls : [];
   const tierCounts = tasks.reduce((counts, task) => {
     counts[task.modelTier] = (counts[task.modelTier] ?? 0) + 1;
     return counts;
   }, {});
+  const modelCostTotal = modelCalls.reduce(
+    (total, call) => total + (call.costEstimate?.estimatedCost ?? call.cost_estimate?.estimated_cost ?? 0),
+    0
+  );
 
   return {
     runId: record.runId,
@@ -32,6 +37,12 @@ export function createReport(record) {
     budgetStatus: record.plan.budgetStatus,
     policyStatus: record.plan.policyStatus,
     routingTrace: record.plan.routingTrace,
+    modelCalls,
+    modelUsage: {
+      callCount: modelCalls.length,
+      estimatedCost: Math.round(modelCostTotal * 1000000000) / 1000000000,
+      currency: modelCalls[0]?.costEstimate?.currency ?? modelCalls[0]?.cost_estimate?.currency ?? "USD",
+    },
     estimatedCost: record.plan.estimatedCost,
     verification: record.verification,
     events: record.events,
@@ -75,6 +86,16 @@ export function formatReportMarkdown(report) {
           (route) => `- ${route.task_id}: ${route.model_tier} (${route.reason})`
         )
       : ["- skipped: no routing trace recorded."]),
+    ``,
+    `## Model Calls`,
+    `- calls: ${report.modelUsage?.callCount ?? 0}`,
+    `- estimated provider cost: ${report.modelUsage?.currency ?? "USD"} ${report.modelUsage?.estimatedCost ?? 0}`,
+    ...(report.modelCalls?.length
+      ? report.modelCalls.map(
+          (call) =>
+            `- ${call.provider}/${call.model}: ${call.usage?.totalTokens ?? 0} tokens, ${call.costEstimate?.currency ?? "USD"} ${call.costEstimate?.estimatedCost ?? 0}`
+        )
+      : ["- none recorded"]),
     ``,
     `## Approval`,
     `- status: ${report.approval?.status ?? "unknown"}`,

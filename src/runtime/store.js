@@ -112,6 +112,7 @@ export class FileExecutionStore {
         ...approvalEvents,
         ...routingEvents,
       ],
+      modelCalls: [],
       verification: [],
       report: null,
     };
@@ -135,6 +136,53 @@ export class FileExecutionStore {
 
     await this.writeRecord(record);
     return record;
+  }
+
+  async recordModelCall(runId, modelCall, { now = new Date() } = {}) {
+    return this.updateRecord(
+      runId,
+      (record) => {
+        record.modelCalls = Array.isArray(record.modelCalls) ? record.modelCalls : [];
+        record.modelCalls.push({
+          timestamp: now.toISOString(),
+          ...modelCall,
+        });
+        record.events.push({
+          type: "model.call.finished",
+          timestamp: now.toISOString(),
+          provider: modelCall.provider,
+          model: modelCall.model,
+          usage: modelCall.usage,
+          costEstimate: modelCall.costEstimate,
+          cost_estimate: modelCall.cost_estimate ?? modelCall.costEstimate,
+        });
+        return record;
+      },
+      { now }
+    );
+  }
+
+  async recordModelCallFailure(runId, modelCall, { now = new Date() } = {}) {
+    return this.updateRecord(
+      runId,
+      (record) => {
+        record.modelCalls = Array.isArray(record.modelCalls) ? record.modelCalls : [];
+        record.modelCalls.push({
+          timestamp: now.toISOString(),
+          status: "failed",
+          ...modelCall,
+        });
+        record.events.push({
+          type: "model.call.failed",
+          timestamp: now.toISOString(),
+          provider: modelCall.provider,
+          model: modelCall.model,
+          error: modelCall.error,
+        });
+        return record;
+      },
+      { now }
+    );
   }
 
   async updateRecord(runId, updater, { now = new Date() } = {}) {

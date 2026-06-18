@@ -127,6 +127,8 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
       "runtime_report",
       "runtime_cancel",
       "runtime_approve",
+      "runtime_provider_health",
+      "runtime_model_generate",
     ]);
 
     const call = await postJson(`${started.httpUrl}/mcp`, {
@@ -145,6 +147,35 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
     assert.match(called.result.structuredContent.runId, /^run_/);
     assert.equal(called.result.structuredContent.status, "approval_required");
     assert.equal(called.result.content[0].type, "text");
+  } finally {
+    server.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("HTTP gateway exposes provider health and model generation endpoints", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-provider-http-"));
+  const store = new FileExecutionStore({ workspace });
+  const server = createRuntimeHttpServer({ store });
+  const started = await listen(server, { host: "127.0.0.1", port: 0 });
+
+  try {
+    const healthResponse = await fetch(`${started.httpUrl}/api/providers/health?provider=local`);
+    assert.equal(healthResponse.status, 200);
+    const health = await healthResponse.json();
+    assert.equal(health.providers.length, 1);
+    assert.equal(health.providers[0].name, "local");
+    assert.equal(health.providers[0].status, "placeholder");
+
+    const generateResponse = await postJson(`${started.httpUrl}/api/model/generate`, {
+      provider: "local",
+      prompt: "hello",
+    });
+    assert.equal(generateResponse.status, 200);
+    const generated = await generateResponse.json();
+    assert.equal(generated.provider, "local");
+    assert.match(generated.text, /hello/);
+    assert.equal(generated.costEstimate.estimatedCost, 0);
   } finally {
     server.close();
     await rm(workspace, { recursive: true, force: true });

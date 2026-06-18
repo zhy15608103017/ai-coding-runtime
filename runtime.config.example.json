@@ -17,6 +17,44 @@
       "maxRetryCount": 8
     }
   },
+  "providers": {
+    "defaultProvider": "local",
+    "retryPolicy": {
+      "maxRetries": 2,
+      "initialDelayMs": 250,
+      "maxDelayMs": 2000,
+      "timeoutMs": 60000
+    },
+    "entries": {
+      "openai-compatible": {
+        "type": "openai-compatible",
+        "baseUrl": "https://api.openai.com/v1",
+        "apiKeyEnv": "OPENAI_API_KEY",
+        "defaultModel": null,
+        "models": []
+      },
+      "anthropic": {
+        "type": "anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "apiKeyEnv": "ANTHROPIC_API_KEY",
+        "apiVersion": "2023-06-01",
+        "defaultModel": null,
+        "models": []
+      },
+      "gemini": {
+        "type": "gemini",
+        "baseUrl": "https://generativelanguage.googleapis.com",
+        "apiKeyEnv": "GEMINI_API_KEY",
+        "defaultModel": null,
+        "models": []
+      },
+      "local": {
+        "type": "local",
+        "defaultModel": "local-placeholder",
+        "models": ["local-placeholder"]
+      }
+    }
+  },
   "verification": {
     "commands": []
   }

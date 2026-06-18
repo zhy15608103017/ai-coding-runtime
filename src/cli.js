@@ -22,6 +22,10 @@ export async function runCli(argv, io = process) {
         return await reportCommand(rest, io);
       case "approve":
         return await approveCommand(rest, io);
+      case "provider-health":
+        return await providerHealthCommand(rest, io);
+      case "generate":
+        return await generateCommand(rest, io);
       case "start":
         return await startCommand(rest, io);
       case "mcp":
@@ -138,6 +142,60 @@ async function approveCommand(args, io) {
   return 0;
 }
 
+async function providerHealthCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const [provider] = positional;
+  const config = await loadRuntimeConfig();
+  const health = await callRuntimeTool(
+    "runtime_provider_health",
+    { provider },
+    { runtimeOptions: runtimeOptionsFromConfig(config) }
+  );
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify(health, null, 2)}\n`);
+  } else {
+    for (const item of health.providers) {
+      io.stdout.write(`${item.name}: ${item.status} (${item.message})\n`);
+    }
+  }
+
+  return 0;
+}
+
+async function generateCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const prompt = positional.join(" ").trim();
+
+  if (!prompt) {
+    throw new Error("generate requires a prompt string.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const generated = await callRuntimeTool(
+    "runtime_model_generate",
+    {
+      runId: options.runId,
+      provider: options.provider,
+      model: options.model,
+      prompt,
+      temperature: options.temperature === undefined ? undefined : Number(options.temperature),
+      maxTokens: options.maxTokens === undefined ? undefined : Number(options.maxTokens),
+      timeoutMs: options.timeoutMs === undefined ? undefined : Number(options.timeoutMs),
+    },
+    { store, runtimeOptions: runtimeOptionsFromConfig(config) }
+  );
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify(generated, null, 2)}\n`);
+  } else {
+    io.stdout.write(`${generated.text}\n`);
+  }
+
+  return 0;
+}
+
 async function startCommand(args, io) {
   const { options } = parseArgs(args);
   const config = await loadRuntimeConfig();
@@ -187,6 +245,7 @@ function runtimeOptionsFromConfig(config) {
     budgetPolicy: config.routing.budgetPolicy,
     escalationPolicy: config.routing.escalationPolicy,
     policyViolations: config.routing.policyViolations,
+    providers: config.providers,
   };
 }
 
@@ -218,6 +277,24 @@ function parseArgs(args) {
     } else if (arg === "--port") {
       options.port = args[index + 1];
       index += 1;
+    } else if (arg === "--provider") {
+      options.provider = args[index + 1];
+      index += 1;
+    } else if (arg === "--model") {
+      options.model = args[index + 1];
+      index += 1;
+    } else if (arg === "--run-id") {
+      options.runId = args[index + 1];
+      index += 1;
+    } else if (arg === "--temperature") {
+      options.temperature = args[index + 1];
+      index += 1;
+    } else if (arg === "--max-tokens") {
+      options.maxTokens = args[index + 1];
+      index += 1;
+    } else if (arg === "--timeout-ms") {
+      options.timeoutMs = args[index + 1];
+      index += 1;
     } else {
       positional.push(arg);
     }
@@ -236,5 +313,7 @@ Usage:
   ai-coding-runtime status <run-id> [--json]
   ai-coding-runtime approve <run-id> [--json]
   ai-coding-runtime report <run-id> [--json|--markdown]
+  ai-coding-runtime provider-health [provider] [--json]
+  ai-coding-runtime generate "<prompt>" [--provider name] [--model model] [--run-id run-id] [--json]
 `;
 }

@@ -1,4 +1,5 @@
 import { createRuntimePlan } from "./planner.js";
+import { checkProviderHealth, generateModelResponse } from "./providers.js";
 import { createReport, formatReportMarkdown } from "./report.js";
 
 export const RUNTIME_TOOLS = [
@@ -72,6 +73,22 @@ export const RUNTIME_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "runtime_provider_health",
+    description: "Return local provider configuration health without making model calls.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        provider: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "runtime_model_generate",
+    description: "Call a configured model provider through the normalized provider interface.",
+    inputSchema: modelGenerateSchema(),
+  },
 ];
 
 export async function callRuntimeTool(name, args, { store, runtimeOptions = {} } = {}) {
@@ -94,6 +111,10 @@ export async function callRuntimeTool(name, args, { store, runtimeOptions = {} }
       return cancelRun(requireRunId(args), args, store);
     case "runtime_approve":
       return approveRun(requireRunId(args), args, store);
+    case "runtime_provider_health":
+      return providerHealth(args, runtimeOptions);
+    case "runtime_model_generate":
+      return modelGenerate(args, store, runtimeOptions);
     default:
       throw new Error(`Unknown runtime tool: ${name}`);
   }
@@ -278,6 +299,113 @@ async function approveRun(runId, args, store) {
   return summarizeRecord(record);
 }
 
+function providerHealth(args = {}, runtimeOptions = {}) {
+  return checkProviderHealth({
+    provider: args.provider,
+    providers: runtimeOptions.providers,
+  });
+}
+
+async function modelGenerate(args = {}, store, runtimeOptions = {}) {
+  if (args.runId) {
+    if (!store?.recordModelCall || !store?.recordModelCallFailure) {
+      throw new Error("runtime_model_generate requires a store when runId is provided.");
+    }
+  }
+
+  const startedAt = Date.now();
+  let response;
+
+  try {
+    response = await generateModelResponse(args, {
+      providers: runtimeOptions.providers,
+    });
+  } catch (error) {
+    if (!args.runId) {
+      throw error;
+    }
+
+    const failure = modelGenerationFailure(args, error, startedAt, runtimeOptions);
+    await store.recordModelCallFailure(args.runId, {
+      provider: failure.provider,
+      model: failure.model,
+      usage: failure.usage,
+      costEstimate: failure.costEstimate,
+      cost_estimate: failure.cost_estimate,
+      finishReason: failure.finishReason,
+      finish_reason: failure.finish_reason,
+      request: failure.request,
+      error: failure.error,
+    });
+    return failure;
+  }
+
+  if (args.runId) {
+    await store.recordModelCall(args.runId, {
+      provider: response.provider,
+      model: response.model,
+      usage: response.usage,
+      costEstimate: response.costEstimate,
+      cost_estimate: response.cost_estimate,
+      finishReason: response.finishReason,
+      finish_reason: response.finish_reason,
+      request: response.request,
+    });
+  }
+
+  return response;
+}
+
+function modelGenerationFailure(args, error, startedAt, runtimeOptions = {}) {
+  const provider = error.provider ?? args.provider ?? runtimeOptions.providers?.defaultProvider ?? null;
+  const model = args.model ?? (provider ? runtimeOptions.providers?.entries?.[provider]?.defaultModel : null) ?? null;
+  const durationMs = Date.now() - startedAt;
+  const attempts = Number.isFinite(error.attempts) ? error.attempts : 0;
+  const costEstimate = {
+    currency: "USD",
+    estimatedCost: 0,
+    estimated_cost: 0,
+    source: "provider-error",
+  };
+
+  return {
+    ok: false,
+    status: "failed",
+    provider,
+    model,
+    text: "",
+    structuredOutput: null,
+    structured_output: null,
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+    },
+    costEstimate,
+    cost_estimate: costEstimate,
+    finishReason: "error",
+    finish_reason: "error",
+    raw: null,
+    request: {
+      attempts,
+      durationMs,
+      duration_ms: durationMs,
+    },
+    error: serializeModelGenerationError(error),
+  };
+}
+
+function serializeModelGenerationError(error) {
+  return {
+    code: error.code ?? "provider.error",
+    message: error.message ?? String(error),
+    provider: error.provider ?? null,
+    statusCode: error.statusCode ?? null,
+    status_code: error.statusCode ?? null,
+    retryable: error.retryable === true,
+  };
+}
+
 function conflictError(message) {
   const error = new Error(message);
   error.statusCode = 409;
@@ -331,6 +459,36 @@ function runIdSchema() {
       runId: { type: "string" },
     },
     required: ["runId"],
+    additionalProperties: false,
+  };
+}
+
+function modelGenerateSchema() {
+  return {
+    type: "object",
+    properties: {
+      runId: { type: "string" },
+      provider: { type: "string" },
+      model: { type: "string" },
+      prompt: { type: "string" },
+      messages: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            role: { type: "string" },
+            content: {},
+          },
+          required: ["content"],
+          additionalProperties: true,
+        },
+      },
+      tools: { type: "array" },
+      responseSchema: { type: "object" },
+      temperature: { type: "number" },
+      maxTokens: { type: "number" },
+      timeoutMs: { type: "number" },
+    },
     additionalProperties: false,
   };
 }

@@ -79,6 +79,22 @@ export function createRuntimeHttpServer({
         return sendJson(response, 200, verification);
       }
 
+      if (request.method === "GET" && url.pathname === "/api/providers/health") {
+        const provider = url.searchParams.get("provider") ?? undefined;
+        const health = await callRuntimeTool(
+          "runtime_provider_health",
+          { provider },
+          { store, runtimeOptions }
+        );
+        return sendJson(response, 200, health);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/model/generate") {
+        const body = await readJsonBody(request);
+        const generated = await callRuntimeTool("runtime_model_generate", body, { store, runtimeOptions });
+        return sendJson(response, 200, generated);
+      }
+
       const reportMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/report$/);
       if (request.method === "GET" && reportMatch) {
         const record = await store.readRecord(reportMatch[1]);

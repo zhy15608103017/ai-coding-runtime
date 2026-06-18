@@ -138,6 +138,29 @@ test("mcp command serves runtime tools over stdio JSON-RPC", async () => {
   }
 });
 
+test("provider-health and generate commands use provider adapters", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-provider-cli-"));
+
+  try {
+    const healthResult = runCli(["provider-health", "local", "--json"], workspace);
+    assert.equal(healthResult.status, 0, healthResult.stderr);
+    const health = JSON.parse(healthResult.stdout);
+    assert.equal(health.providers.length, 1);
+    assert.equal(health.providers[0].status, "placeholder");
+
+    const generateResult = runCli(
+      ["generate", "hello provider", "--provider", "local", "--json"],
+      workspace
+    );
+    assert.equal(generateResult.status, 0, generateResult.stderr);
+    const generated = JSON.parse(generateResult.stdout);
+    assert.equal(generated.provider, "local");
+    assert.match(generated.text, /hello provider/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 function runCli(args, workspace) {
   return spawnSync(process.execPath, [cliPath, ...args], {
     cwd: path.resolve("."),

@@ -6,6 +6,7 @@ AI Coding Runtime exposes two integration surfaces in Phase 2:
 - Streamable HTTP JSON-RPC: `POST http://127.0.0.1:3847/mcp`
 
 The HTTP service also exposes REST-style endpoints for scripts and smoke tests.
+Phase 5 adds provider adapters for OpenAI-compatible, Anthropic, Gemini, and local placeholder models. `runtime_model_generate` can append usage and estimated cost to a run trace when called with `runId`.
 Phase 3 responses include task contract validation metadata and a deterministic planning prompt. If a plan contains medium or high risk tasks, `runtime_run` creates a run with status `approval_required`; `runtime_approve` records human approval and moves the run to `approved`.
 Phase 4 responses add classifier, model registry, routing policy, budget policy, escalation policy, budget status, policy status, and routing trace metadata. If `budgetStatus.allowed` or `policyStatus.allowed` is `false`, `runtime_run` refuses persisted execution with a policy error.
 Explicit read-only planning prompts such as `plan only`, `read-only`, or `不修改文件` produce low-risk task contracts and can be persisted with status `planned`.
@@ -23,8 +24,11 @@ MCP tools:
 - `runtime_report`
 - `runtime_cancel`
 - `runtime_approve`
+- `runtime_provider_health`
+- `runtime_model_generate`
 
 `runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution.
+Use `runtime_provider_health` before real generation to confirm local API key and model configuration. Use `runtime_model_generate` only when the host tool intentionally wants Runtime to call a configured provider directly.
 For read-only planning, include wording such as `plan only` or `不修改文件` when you want a low-risk plan that does not require approval.
 
 ## Codex CLI
@@ -146,6 +150,8 @@ Endpoints:
 - `POST /api/runs/:id/approve`
 - `POST /api/runs/:id/cancel`
 - `POST /api/verify`
+- `GET /api/providers/health`
+- `POST /api/model/generate`
 - `GET /api/runs/:id/report`
 - `POST /mcp`
 

@@ -7,6 +7,7 @@ import {
   DEFAULT_ROUTING_POLICY,
   MODEL_TIER_ALIASES,
 } from "./router.js";
+import { DEFAULT_PROVIDER_CONFIG } from "./providers.js";
 
 export const DEFAULT_RUNTIME_CONFIG = {
   server: {
@@ -26,6 +27,7 @@ export const DEFAULT_RUNTIME_CONFIG = {
     budgetPolicy: DEFAULT_BUDGET_POLICY,
     policy: DEFAULT_ROUTING_POLICY,
   },
+  providers: DEFAULT_PROVIDER_CONFIG,
   verification: {
     commands: [],
   },
@@ -51,7 +53,35 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
     merged.server.apiToken = env.AI_CODING_RUNTIME_API_TOKEN;
   }
 
+  applyProviderEnvOverrides(merged, env);
+
   return merged;
+}
+
+function applyProviderEnvOverrides(config, env) {
+  const providers = config.providers?.entries ?? {};
+  const openai = providers["openai-compatible"];
+  const anthropic = providers.anthropic;
+  const gemini = providers.gemini;
+
+  if (openai) {
+    if (env.OPENAI_API_KEY) openai.apiKey = env.OPENAI_API_KEY;
+    if (env.OPENAI_BASE_URL) openai.baseUrl = env.OPENAI_BASE_URL;
+    if (env.OPENAI_MODEL) openai.defaultModel = env.OPENAI_MODEL;
+  }
+
+  if (anthropic) {
+    if (env.ANTHROPIC_API_KEY) anthropic.apiKey = env.ANTHROPIC_API_KEY;
+    if (env.ANTHROPIC_BASE_URL) anthropic.baseUrl = env.ANTHROPIC_BASE_URL;
+    if (env.ANTHROPIC_MODEL) anthropic.defaultModel = env.ANTHROPIC_MODEL;
+  }
+
+  if (gemini) {
+    if (env.GEMINI_API_KEY) gemini.apiKey = env.GEMINI_API_KEY;
+    if (env.GOOGLE_API_KEY && !gemini.apiKey) gemini.apiKey = env.GOOGLE_API_KEY;
+    if (env.GEMINI_BASE_URL) gemini.baseUrl = env.GEMINI_BASE_URL;
+    if (env.GEMINI_MODEL) gemini.defaultModel = env.GEMINI_MODEL;
+  }
 }
 
 async function readConfigFile(cwd) {
