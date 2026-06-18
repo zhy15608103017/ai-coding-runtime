@@ -1,0 +1,256 @@
+{
+  "runId": "run_20260618004452155_o64955",
+  "status": "planned",
+  "request": "实现登录限流并补充测试",
+  "createdAt": "2026-06-18T00:44:52.155Z",
+  "updatedAt": "2026-06-18T00:44:52.155Z",
+  "plan": {
+    "planId": "plan_20260618004452_8p19wm",
+    "request": "实现登录限流并补充测试",
+    "createdAt": "2026-06-18T00:44:52.152Z",
+    "modelTiers": [
+      {
+        "id": "cheap",
+        "label": "Cheap",
+        "description": "Low-cost tier for read-only analysis and low-risk generation."
+      },
+      {
+        "id": "standard",
+        "label": "Standard",
+        "description": "Balanced tier for local code changes with ordinary risk."
+      },
+      {
+        "id": "premium",
+        "label": "Premium",
+        "description": "Strong tier for high-risk work, hard verification, and final review."
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T-001",
+        "title": "读取项目结构与需求上下文",
+        "goal": "Understand the workspace and clarify the requested outcome: 实现登录限流并补充测试",
+        "difficulty": "L0",
+        "risk": "low",
+        "contextNeed": "low",
+        "verification": "easy",
+        "dependsOn": [],
+        "allowedFiles": [],
+        "forbiddenActions": [
+          "modify files",
+          "call external model providers"
+        ],
+        "acceptance": [
+          "workspace structure is summarized",
+          "request is preserved in the run trace"
+        ],
+        "expectedOutput": [
+          "workspace summary",
+          "planning notes"
+        ],
+        "task_id": "T-001",
+        "modelTier": "cheap",
+        "routingReason": [
+          "low-risk, easy-to-verify task can use the cheap tier"
+        ]
+      },
+      {
+        "id": "T-002",
+        "title": "生成任务合同与执行约束",
+        "goal": "Turn the request into explicit worker-safe task contracts.",
+        "difficulty": "L1",
+        "risk": "low",
+        "contextNeed": "low",
+        "verification": "easy",
+        "dependsOn": [
+          "T-001"
+        ],
+        "allowedFiles": [],
+        "forbiddenActions": [
+          "modify files outside an approved task contract"
+        ],
+        "acceptance": [
+          "each executable task has acceptance criteria",
+          "each executable task has forbidden actions"
+        ],
+        "expectedOutput": [
+          "task contracts",
+          "dependency list"
+        ],
+        "task_id": "T-002",
+        "modelTier": "cheap",
+        "routingReason": [
+          "low-risk, easy-to-verify task can use the cheap tier"
+        ]
+      },
+      {
+        "id": "T-003",
+        "title": "实现核心代码变更",
+        "goal": "Apply the requested implementation inside the approved workspace scope.",
+        "difficulty": "L2",
+        "risk": "medium",
+        "contextNeed": "medium",
+        "verification": "medium",
+        "dependsOn": [
+          "T-002"
+        ],
+        "allowedFiles": [
+          "src/**",
+          "tests/**"
+        ],
+        "forbiddenActions": [
+          "edit files outside the approved allowlist",
+          "perform destructive filesystem operations"
+        ],
+        "acceptance": [
+          "implementation matches the approved task contract",
+          "changed files remain inside the allowlist"
+        ],
+        "expectedOutput": [
+          "patch",
+          "implementation notes",
+          "files touched"
+        ],
+        "task_id": "T-003",
+        "modelTier": "standard",
+        "routingReason": [
+          "task needs the standard tier because risk, context, or verification is non-trivial"
+        ]
+      },
+      {
+        "id": "T-004",
+        "title": "补充测试与验证命令",
+        "goal": "Add or identify verification that proves the requested behavior.",
+        "difficulty": "L1",
+        "risk": "low",
+        "contextNeed": "medium",
+        "verification": "easy",
+        "dependsOn": [
+          "T-003"
+        ],
+        "allowedFiles": [
+          "tests/**",
+          "package.json"
+        ],
+        "forbiddenActions": [
+          "weaken existing assertions",
+          "remove existing tests"
+        ],
+        "acceptance": [
+          "verification command is recorded",
+          "new behavior has test coverage when code changes are made"
+        ],
+        "expectedOutput": [
+          "test patch",
+          "verification command"
+        ],
+        "task_id": "T-004",
+        "modelTier": "standard",
+        "routingReason": [
+          "task needs the standard tier because risk, context, or verification is non-trivial"
+        ]
+      },
+      {
+        "id": "T-005",
+        "title": "运行验证并收集证据",
+        "goal": "Run configured checks and capture the evidence needed for final review.",
+        "difficulty": "L1",
+        "risk": "low",
+        "contextNeed": "low",
+        "verification": "easy",
+        "dependsOn": [
+          "T-004"
+        ],
+        "allowedFiles": [],
+        "forbiddenActions": [
+          "claim success without command output"
+        ],
+        "acceptance": [
+          "verification results include command, exit code, and output summary",
+          "failed verification blocks final success"
+        ],
+        "expectedOutput": [
+          "verification evidence",
+          "failure summary if any"
+        ],
+        "task_id": "T-005",
+        "modelTier": "cheap",
+        "routingReason": [
+          "low-risk, easy-to-verify task can use the cheap tier"
+        ]
+      },
+      {
+        "id": "T-006",
+        "title": "最终审查与交付报告",
+        "goal": "Review the full run, explain routing decisions, and prepare the final report.",
+        "difficulty": "L4",
+        "risk": "high",
+        "contextNeed": "high",
+        "verification": "hard",
+        "finalVerification": true,
+        "dependsOn": [
+          "T-005"
+        ],
+        "allowedFiles": [],
+        "forbiddenActions": [
+          "skip final verification",
+          "hide failed checks"
+        ],
+        "acceptance": [
+          "final report includes task graph, routing, and verification evidence",
+          "premium-tier final review is recorded"
+        ],
+        "expectedOutput": [
+          "final report",
+          "risk notes",
+          "follow-up recommendations"
+        ],
+        "task_id": "T-006",
+        "modelTier": "premium",
+        "routingReason": [
+          "final verification always uses the premium tier"
+        ]
+      }
+    ],
+    "dependencies": [
+      {
+        "from": "T-001",
+        "to": "T-002"
+      },
+      {
+        "from": "T-002",
+        "to": "T-003"
+      },
+      {
+        "from": "T-003",
+        "to": "T-004"
+      },
+      {
+        "from": "T-004",
+        "to": "T-005"
+      },
+      {
+        "from": "T-005",
+        "to": "T-006"
+      }
+    ],
+    "approvalRequired": true,
+    "estimatedCost": {
+      "currency": "USD",
+      "minimum": 0,
+      "maximum": 0,
+      "note": "V0 skeleton records routing tiers but does not call real model providers."
+    },
+    "riskSummary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)",
+    "status": "planned"
+  },
+  "events": [
+    {
+      "type": "run.created",
+      "timestamp": "2026-06-18T00:44:52.155Z",
+      "message": "Runtime run record created."
+    }
+  ],
+  "verification": [],
+  "report": null
+}

@@ -1,0 +1,17 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "httpPort": 3847,
+    "mcpPath": "/mcp"
+  },
+  "storage": {
+    "directory": ".ai-coding-runtime"
+  },
+  "routing": {
+    "modelTiers": ["cheap", "standard", "premium"],
+    "finalVerificationTier": "premium"
+  },
+  "verification": {
+    "commands": []
+  }
+}

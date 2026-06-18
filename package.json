@@ -1,0 +1,16 @@
+{
+  "name": "ai-coding-runtime",
+  "version": "0.1.0",
+  "description": "A local-first AI coding task planner, model router, and execution trace runtime.",
+  "type": "module",
+  "bin": {
+    "ai-coding-runtime": "./bin/ai-coding-runtime.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node ./bin/ai-coding-runtime.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
