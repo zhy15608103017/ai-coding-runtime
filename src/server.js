@@ -4,7 +4,11 @@ import { createReport, FileExecutionStore, formatReportMarkdown } from "./index.
 import { handleMcpJsonRpc } from "./mcp.js";
 import { callRuntimeTool } from "./runtime/tools.js";
 
-export function createRuntimeHttpServer({ store = new FileExecutionStore(), apiToken = null } = {}) {
+export function createRuntimeHttpServer({
+  store = new FileExecutionStore(),
+  apiToken = null,
+  runtimeOptions = {},
+} = {}) {
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://127.0.0.1");
@@ -25,19 +29,19 @@ export function createRuntimeHttpServer({ store = new FileExecutionStore(), apiT
 
       if (request.method === "POST" && url.pathname === "/api/plan") {
         const body = await readJsonBody(request);
-        const plan = await callRuntimeTool("runtime_plan", body, { store });
+        const plan = await callRuntimeTool("runtime_plan", body, { store, runtimeOptions });
         return sendJson(response, 200, plan);
       }
 
       if (request.method === "POST" && url.pathname === "/api/estimate") {
         const body = await readJsonBody(request);
-        const estimate = await callRuntimeTool("runtime_estimate", body, { store });
+        const estimate = await callRuntimeTool("runtime_estimate", body, { store, runtimeOptions });
         return sendJson(response, 200, estimate);
       }
 
       if (request.method === "POST" && url.pathname === "/api/runs") {
         const body = await readJsonBody(request);
-        const record = await callRuntimeTool("runtime_run", body, { store });
+        const record = await callRuntimeTool("runtime_run", body, { store, runtimeOptions });
         return sendJson(response, 201, record);
       }
 
@@ -89,7 +93,7 @@ export function createRuntimeHttpServer({ store = new FileExecutionStore(), apiT
 
       if (request.method === "POST" && url.pathname === "/mcp") {
         const body = await readJsonBody(request);
-        const mcpResponse = await handleMcpJsonRpc(body, { store });
+        const mcpResponse = await handleMcpJsonRpc(body, { store, runtimeOptions });
 
         if (!mcpResponse) {
           response.writeHead(202);

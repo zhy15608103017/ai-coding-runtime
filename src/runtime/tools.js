@@ -74,14 +74,14 @@ export const RUNTIME_TOOLS = [
   },
 ];
 
-export async function callRuntimeTool(name, args, { store }) {
+export async function callRuntimeTool(name, args, { store, runtimeOptions = {} } = {}) {
   switch (name) {
     case "runtime_plan":
-      return createRuntimePlan({ request: requireRequest(args) });
+      return createRuntimePlan({ request: requireRequest(args), ...runtimeOptions });
     case "runtime_estimate":
-      return createEstimate(requireRequest(args));
+      return createEstimate(requireRequest(args), runtimeOptions);
     case "runtime_run":
-      return createRun(requireRequest(args), store);
+      return createRun(requireRequest(args), store, runtimeOptions);
     case "runtime_status":
       return readStatus(requireRunId(args), store);
     case "runtime_collect":
@@ -113,12 +113,20 @@ export function asMcpToolResult(value) {
   };
 }
 
-function createEstimate(request) {
-  const plan = createRuntimePlan({ request });
+function createEstimate(request, runtimeOptions = {}) {
+  const plan = createRuntimePlan({ request, ...runtimeOptions });
 
   return {
     request,
     modelTiers: plan.modelTiers,
+    modelTierAliases: plan.modelTierAliases,
+    modelRegistry: plan.modelRegistry,
+    routingPolicy: plan.routingPolicy,
+    budgetPolicy: plan.budgetPolicy,
+    escalationPolicy: plan.escalationPolicy,
+    budgetStatus: plan.budgetStatus,
+    policyStatus: plan.policyStatus,
+    routingTrace: plan.routingTrace,
     estimatedCost: plan.estimatedCost,
     approvalRequired: plan.approvalRequired,
     approval: plan.approval,
@@ -136,12 +144,14 @@ function createEstimate(request) {
       verification: task.verification,
       modelTier: task.modelTier,
       routingReason: task.routingReason,
+      classification: task.classification,
+      routing: task.routing,
     })),
   };
 }
 
-async function createRun(request, store) {
-  const plan = createRuntimePlan({ request });
+async function createRun(request, store, runtimeOptions = {}) {
+  const plan = createRuntimePlan({ request, ...runtimeOptions });
   const record = await store.createRecord(plan);
 
   return {

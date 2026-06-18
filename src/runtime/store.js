@@ -19,6 +19,40 @@ export class FileExecutionStore {
       throw error;
     }
 
+    if (plan.budgetStatus?.allowed === false) {
+      const error = new Error("Invalid runtime plan: budget.policy.violation");
+      error.statusCode = 409;
+      error.validation = {
+        valid: false,
+        errors: [
+          {
+            code: "budget.policy.violation",
+            field: "budgetStatus",
+            message: "Runtime execution is refused because the plan violates budget policy.",
+            violations: plan.budgetStatus.violations,
+          },
+        ],
+      };
+      throw error;
+    }
+
+    if (plan.policyStatus?.allowed === false) {
+      const error = new Error("Invalid runtime plan: policy.status.violation");
+      error.statusCode = 409;
+      error.validation = {
+        valid: false,
+        errors: [
+          {
+            code: "policy.status.violation",
+            field: "policyStatus",
+            message: "Runtime execution is refused because the plan violates user policy.",
+            violations: plan.policyStatus.violations,
+          },
+        ],
+      };
+      throw error;
+    }
+
     const expectedApprovalStatus = plan.approval.required ? "required" : "not_required";
     if (plan.approval.status !== expectedApprovalStatus) {
       const error = new Error("Invalid runtime plan: approval.status.inconsistent");
@@ -38,6 +72,30 @@ export class FileExecutionStore {
     const runId = createRunId(now);
     const status = plan.approval.required ? "approval_required" : "planned";
     const storedPlan = applyRunIdToPlan({ ...plan, validation }, runId);
+    const approvalEvents =
+      status === "approval_required"
+        ? [
+            {
+              type: "approval.required",
+              timestamp: now.toISOString(),
+              message: "Human approval is required before execution.",
+              reasons: plan.approval.reasons,
+            },
+          ]
+        : [];
+    const routingEvents = (plan.routingTrace ?? []).map((route) => ({
+      type: "task.routed",
+      timestamp: now.toISOString(),
+      taskId: route.task_id,
+      task_id: route.task_id,
+      modelTier: route.model_tier,
+      model_tier: route.model_tier,
+      reason: route.reason,
+      selectedModel: route.selected_model,
+      selected_model: route.selected_model,
+      escalationTriggers: route.escalation_triggers,
+      escalation_triggers: route.escalation_triggers,
+    }));
     const record = {
       runId,
       status,
@@ -51,16 +109,8 @@ export class FileExecutionStore {
           timestamp: now.toISOString(),
           message: "Runtime run record created.",
         },
-        ...(status === "approval_required"
-          ? [
-              {
-                type: "approval.required",
-                timestamp: now.toISOString(),
-                message: "Human approval is required before execution.",
-                reasons: plan.approval.reasons,
-              },
-            ]
-          : []),
+        ...approvalEvents,
+        ...routingEvents,
       ],
       verification: [],
       report: null,

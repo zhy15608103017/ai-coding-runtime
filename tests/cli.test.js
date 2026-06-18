@@ -36,6 +36,8 @@ test("run, status, and report commands use the same file-backed run", async () =
     const reportResult = runCli(["report", runOutput.runId, "--markdown"], workspace);
     assert.equal(reportResult.status, 0, reportResult.stderr);
     assert.match(reportResult.stdout, /AI Coding Runtime Report/);
+    assert.match(reportResult.stdout, /Budget/);
+    assert.match(reportResult.stdout, /Routing Trace/);
     assert.match(reportResult.stdout, /实现 V0 runtime 骨架/);
   } finally {
     await rm(workspace, { recursive: true, force: true });

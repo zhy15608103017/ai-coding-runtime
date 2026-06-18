@@ -10,7 +10,12 @@
   },
   "routing": {
     "modelTiers": ["cheap", "standard", "premium"],
-    "finalVerificationTier": "premium"
+    "finalVerificationTier": "premium",
+    "budgetPolicy": {
+      "maxCostPerRun": 1,
+      "maxCallsPerRun": 20,
+      "maxRetryCount": 8
+    }
   },
   "verification": {
     "commands": []

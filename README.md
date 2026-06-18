@@ -14,9 +14,12 @@ V0 currently covers the Phase 1 runtime skeleton and the Phase 2 gateway skeleto
 - validate task contracts before a run is persisted
 - include task graph, approval gate, validation, and plan report metadata in plans
 - include a deterministic planning prompt for host tools and future supervisor calls
+- include classifier, routing trace, model registry, escalation policy, and budget metadata
+- refuse persisted execution when budget or routing policy metadata says a run is not allowed
 
 V0 does not call real model providers or apply patches. Those capabilities are planned after the planner, router, storage, and gateway contracts are stable.
 Runs that include medium or high risk tasks are stored as `approval_required`. V0 provides a minimal approval input through CLI, HTTP, and MCP; later phases will add execution after approval and richer approval UI.
+Phase 4 routing is deterministic: file-editing tasks route to at least `standard`, final verification routes to `premium`, and failed low-tier attempts can be represented with escalation trace records.
 Explicit read-only planning requests such as `plan only`, `read-only`, or `不修改文件` produce low-risk plans that can be stored as `planned` without an approval gate.
 
 ## Usage
@@ -57,7 +60,12 @@ Copy `runtime.config.example.json` to `runtime.config.json` and adjust it:
   },
   "routing": {
     "modelTiers": ["cheap", "standard", "premium"],
-    "finalVerificationTier": "premium"
+    "finalVerificationTier": "premium",
+    "budgetPolicy": {
+      "maxCostPerRun": 1,
+      "maxCallsPerRun": 20,
+      "maxRetryCount": 8
+    }
   },
   "verification": {
     "commands": []
@@ -109,4 +117,4 @@ The MCP gateway exposes:
 - `runtime_cancel`
 - `runtime_approve`
 
-`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, and `planReport`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, and returns `planned` for explicit low-risk read-only plans. `runtime_approve` records human approval and moves the run to `approved`.
+`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`.

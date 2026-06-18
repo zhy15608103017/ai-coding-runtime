@@ -52,7 +52,7 @@ async function runCommand(args, io) {
 
   const config = await loadRuntimeConfig();
   const store = new FileExecutionStore({ workspace: config.storage.directory });
-  const plan = createRuntimePlan({ request });
+  const plan = createRuntimePlan({ request, ...runtimeOptionsFromConfig(config) });
   const record = await store.createRecord(plan);
   const output = {
     runId: record.runId,
@@ -144,7 +144,11 @@ async function startCommand(args, io) {
   const host = options.host ?? config.server.host;
   const port = options.port === undefined ? config.server.httpPort : Number(options.port);
   const store = new FileExecutionStore({ workspace: config.storage.directory });
-  const server = createRuntimeHttpServer({ store, apiToken: config.server.apiToken });
+  const server = createRuntimeHttpServer({
+    store,
+    apiToken: config.server.apiToken,
+    runtimeOptions: runtimeOptionsFromConfig(config),
+  });
   const started = await listen(server, { host, port });
   const output = {
     status: "started",
@@ -168,8 +172,22 @@ async function mcpCommand(io) {
     input: io.stdin,
     output: io.stdout,
     store,
+    runtimeOptions: runtimeOptionsFromConfig(config),
   });
   return 0;
+}
+
+function runtimeOptionsFromConfig(config) {
+  return {
+    modelRegistry: config.routing.modelRegistry,
+    routingPolicy: {
+      ...(config.routing.policy ?? {}),
+      finalVerificationTier: config.routing.finalVerificationTier,
+    },
+    budgetPolicy: config.routing.budgetPolicy,
+    escalationPolicy: config.routing.escalationPolicy,
+    policyViolations: config.routing.policyViolations,
+  };
 }
 
 function waitForShutdown(server, io) {

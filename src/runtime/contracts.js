@@ -12,6 +12,7 @@ export function normalizeTaskContract(task) {
   const expectedOutput = task.expectedOutput ?? task.expected_output ?? [];
   const contextNeed = task.contextNeed ?? task.context_need ?? "low";
   const modelTier = task.modelTier ?? task.model_tier;
+  const finalVerification = task.finalVerification ?? task.final_verification ?? false;
 
   return {
     ...task,
@@ -29,6 +30,8 @@ export function normalizeTaskContract(task) {
     context_need: contextNeed,
     modelTier,
     model_tier: modelTier,
+    finalVerification,
+    final_verification: finalVerification,
   };
 }
 
@@ -48,6 +51,7 @@ export function createTaskGraph({
       difficulty: task.difficulty,
       risk: task.risk,
       model_tier: task.model_tier,
+      final_verification: task.final_verification,
       depends_on: task.depends_on,
     })),
     dependencies,
@@ -62,7 +66,7 @@ export function createPlanningPrompt({ request }) {
     "You are the AI Coding Runtime planner.",
     "Convert the user request into a dependency-aware task graph and worker-safe Task Contract entries.",
     "",
-    "Each Task Contract must include: task_id, title, goal, difficulty, risk, context_need, verification, model_tier, depends_on, allowed_files, forbidden_actions, acceptance, and expected_output.",
+    "Each Task Contract must include: task_id, title, goal, difficulty, risk, context_need, verification, model_tier, final_verification, depends_on, allowed_files, forbidden_actions, acceptance, and expected_output.",
     "Reject or revise any task that has no acceptance criteria.",
     "Mark medium and high risk plans as requiring human approval before execution.",
     "",
@@ -118,6 +122,7 @@ export function validateRuntimePlan(plan) {
   validateTaskGraphTaskConsistency(plan, tasks, errors);
   validateDependencyEdgeConsistency(plan, tasks, errors);
   validateTaskGraphAliasConsistency(plan, errors);
+  validateRoutingMetadata(plan, tasks, errors);
   validateApprovalConsistency(plan, tasks, errors);
   validateDependencies(plan, tasks, taskIds, errors);
 
@@ -212,6 +217,23 @@ function validateTaskContract(task, index, errors, rawTask = {}) {
       code: "task.model_tier.invalid",
       task_id: task.task_id,
       message: "Task model_tier must be one of cheap, standard, premium.",
+    });
+  }
+
+  if (typeof rawTask.final_verification !== "boolean") {
+    errors.push({
+      code: "task.final_verification.required",
+      task_id: task.task_id,
+      message: "Task must include final_verification.",
+    });
+  } else if (
+    rawTask.finalVerification !== undefined &&
+    rawTask.finalVerification !== rawTask.final_verification
+  ) {
+    errors.push({
+      code: "task.final_verification.alias.inconsistent",
+      task_id: task.task_id,
+      message: "Task finalVerification must match final_verification.",
     });
   }
 
@@ -480,6 +502,482 @@ function validateApprovalConsistency(plan, tasks, errors) {
   }
 }
 
+function validateRoutingMetadata(plan, tasks, errors) {
+  const modelRegistry = Array.isArray(plan.modelRegistry) ? plan.modelRegistry : [];
+
+  validateRoutingTrace(plan, tasks, errors, modelRegistry);
+  validateModelTierAliases(plan, errors);
+  validateModelRegistry(plan, errors);
+  validateBudgetStatus(plan, errors);
+  validatePolicyStatus(plan, errors);
+}
+
+function validateModelTierAliases(plan, errors) {
+  const aliases = [
+    ["modelTierAliases", plan.modelTierAliases],
+    ["model_tier_aliases", plan.model_tier_aliases],
+  ];
+
+  for (const [field, value] of aliases) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      errors.push({
+        code: "model.tier_aliases.required",
+        field,
+        message: `Plan must include ${field} metadata.`,
+      });
+      continue;
+    }
+
+    if (!isValidModelTierAliases(value)) {
+      errors.push({
+        code: "model.tier_aliases.invalid",
+        field,
+        message: `${field} must map cheap, standard, and premium aliases to their matching tiers.`,
+      });
+    }
+  }
+
+  if (
+    plan.modelTierAliases &&
+    plan.model_tier_aliases &&
+    typeof plan.modelTierAliases === "object" &&
+    typeof plan.model_tier_aliases === "object" &&
+    !Array.isArray(plan.modelTierAliases) &&
+    !Array.isArray(plan.model_tier_aliases) &&
+    !valuesEqual(plan.modelTierAliases, plan.model_tier_aliases)
+  ) {
+    errors.push({
+      code: "model.tier_aliases.alias.inconsistent",
+      field: "modelTierAliases/model_tier_aliases",
+      message: "modelTierAliases must match model_tier_aliases.",
+    });
+  }
+}
+
+function validateRoutingTrace(plan, tasks, errors, modelRegistry) {
+  const traces = [
+    ["routingTrace", plan.routingTrace],
+    ["routing_trace", plan.routing_trace],
+  ];
+
+  for (const [field, trace] of traces) {
+    if (!Array.isArray(trace)) {
+      errors.push({
+        code: "routing.trace.required",
+        field,
+        message: `Plan must include ${field} routing trace metadata.`,
+      });
+      continue;
+    }
+
+    if (trace.length !== tasks.length) {
+      errors.push({
+        code: "routing.trace.inconsistent",
+        field,
+        message: `${field} must include one route record per task.`,
+      });
+    }
+  }
+
+  if (Array.isArray(plan.routingTrace) && Array.isArray(plan.routing_trace)) {
+    if (!valuesEqual(plan.routingTrace, plan.routing_trace)) {
+      errors.push({
+        code: "routing.trace.alias.inconsistent",
+        field: "routingTrace/routing_trace",
+        message: "routingTrace must match routing_trace.",
+      });
+    }
+  }
+
+  const trace = Array.isArray(plan.routingTrace) ? plan.routingTrace : [];
+  const tasksById = new Map(tasks.map((task) => [task.task_id, task]));
+  const traceTaskIds = new Set();
+
+  for (const route of trace) {
+    const taskId = route?.task_id;
+    if (typeof taskId !== "string" || taskId.trim().length === 0) {
+      errors.push({
+        code: "routing.trace.task_id.required",
+        field: "routingTrace.task_id",
+        message: "Routing trace entries must include task_id.",
+      });
+      continue;
+    }
+
+    if (traceTaskIds.has(taskId)) {
+      errors.push({
+        code: "routing.trace.task.duplicate",
+        task_id: taskId,
+        message: `Routing trace contains duplicate task ${taskId}.`,
+      });
+    }
+    traceTaskIds.add(taskId);
+
+    const task = tasksById.get(taskId);
+    if (!task) {
+      errors.push({
+        code: "routing.trace.task.unknown",
+        task_id: taskId,
+        message: `Routing trace references unknown task ${taskId}.`,
+      });
+      continue;
+    }
+
+    if (route.model_tier !== task.model_tier) {
+      errors.push({
+        code: "routing.trace.model_tier.inconsistent",
+        task_id: taskId,
+        message: `Routing trace for ${taskId} must match task model_tier.`,
+      });
+    }
+
+    validateSelectedModelConsistency({
+      selectedModel: route.selected_model,
+      expectedTier: task.model_tier,
+      modelRegistry,
+      codePrefix: "routing.trace",
+      taskId,
+      errors,
+    });
+  }
+
+  for (const task of tasks) {
+    if (!traceTaskIds.has(task.task_id)) {
+      errors.push({
+        code: "routing.trace.task.missing",
+        task_id: task.task_id,
+        message: `Routing trace is missing task ${task.task_id}.`,
+      });
+    }
+  }
+
+  for (const task of tasks) {
+    if (!isValidClassificationMetadata(task.classification)) {
+      errors.push({
+        code: task.classification && typeof task.classification === "object" && !Array.isArray(task.classification)
+          ? "task.classification.invalid"
+          : "task.classification.required",
+        task_id: task.task_id,
+        message:
+          "Task must include Phase 4 classification metadata with difficulty, risk, context_need, verification, confidence, and reasoning.",
+      });
+    }
+
+    if (!isValidTaskRoutingMetadata(task.routing)) {
+      errors.push({
+        code: task.routing && typeof task.routing === "object" && !Array.isArray(task.routing)
+          ? "task.routing.invalid"
+          : "task.routing.required",
+        task_id: task.task_id,
+        message:
+          "Task must include Phase 4 routing metadata with model_tier, selected_model, reason, and escalation_triggers.",
+      });
+    }
+
+    const contractEditsFiles = Array.isArray(task.allowed_files) && task.allowed_files.length > 0;
+    const contractFinalVerification = task.final_verification === true;
+    if (
+      task.classification &&
+      typeof task.classification === "object" &&
+      !Array.isArray(task.classification) &&
+      task.classification.edits_files !== contractEditsFiles
+    ) {
+      errors.push({
+        code: "task.classification.edits_files.inconsistent",
+        task_id: task.task_id,
+        message: "Task classification edits_files must match the task contract allowed_files.",
+      });
+    }
+
+    if (
+      task.routing &&
+      typeof task.routing === "object" &&
+      !Array.isArray(task.routing) &&
+      task.routing.model_tier !== task.model_tier
+    ) {
+      errors.push({
+        code: "task.routing.model_tier.inconsistent",
+        task_id: task.task_id,
+        message: "Task routing metadata model_tier must match the task contract model_tier.",
+      });
+    }
+
+    validateSelectedModelConsistency({
+      selectedModel: task.routing?.selected_model,
+      expectedTier: task.model_tier,
+      modelRegistry,
+      codePrefix: "task.routing",
+      taskId: task.task_id,
+      errors,
+    });
+
+    if (contractEditsFiles && task.model_tier === "cheap") {
+      errors.push({
+        code: "routing.safety.file_edit_tier",
+        task_id: task.task_id,
+        message: "File-editing tasks must route to at least the standard tier.",
+      });
+    }
+
+    if (
+      contractFinalVerification &&
+      task.routing &&
+      typeof task.routing === "object" &&
+      !Array.isArray(task.routing) &&
+      Array.isArray(task.routing.escalation_triggers) &&
+      !task.routing.escalation_triggers.includes("final_review")
+    ) {
+      errors.push({
+        code: "task.routing.final_review.required",
+        task_id: task.task_id,
+        message: "Final verification tasks must include final_review in routing escalation triggers.",
+      });
+    }
+
+    if (contractFinalVerification && task.model_tier !== "premium") {
+      errors.push({
+        code: "routing.safety.final_verification_tier",
+        task_id: task.task_id,
+        message: "Final verification tasks must route to the premium tier.",
+      });
+    }
+  }
+}
+
+function validateModelRegistry(plan, errors) {
+  const registries = [
+    ["modelRegistry", plan.modelRegistry],
+    ["model_registry", plan.model_registry],
+  ];
+
+  for (const [field, registry] of registries) {
+    if (!Array.isArray(registry)) {
+      errors.push({
+        code: "model.registry.required",
+        field,
+        message: `Plan must include ${field} metadata.`,
+      });
+      continue;
+    }
+
+    for (const [index, entry] of registry.entries()) {
+      if (!isValidModelRegistryEntry(entry)) {
+        errors.push({
+          code: "model.registry.entry.invalid",
+          field: `${field}[${index}]`,
+          message:
+            "Model registry entries must include provider, model, tier, cost_hint, context_window, tool_support, strengths, and blocked_task_types.",
+        });
+      }
+    }
+  }
+
+  if (Array.isArray(plan.modelRegistry) && Array.isArray(plan.model_registry)) {
+    if (!valuesEqual(plan.modelRegistry, plan.model_registry)) {
+      errors.push({
+        code: "model.registry.alias.inconsistent",
+        field: "modelRegistry/model_registry",
+        message: "modelRegistry must match model_registry.",
+      });
+    }
+  }
+}
+
+function validateBudgetStatus(plan, errors) {
+  const budgetStatus = plan.budgetStatus;
+  const budgetStatusAlias = plan.budget_status;
+
+  for (const [field, value] of [
+    ["budgetStatus", budgetStatus],
+    ["budget_status", budgetStatusAlias],
+  ]) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      errors.push({
+        code: "budget.status.required",
+        field,
+        message: `Plan must include ${field} metadata.`,
+      });
+      continue;
+    }
+
+    if (typeof value.allowed !== "boolean" || !Array.isArray(value.violations)) {
+      errors.push({
+        code: "budget.status.invalid",
+        field,
+        message: `${field} must include allowed and violations fields.`,
+      });
+    }
+  }
+
+  if (
+    budgetStatus &&
+    budgetStatusAlias &&
+    typeof budgetStatus === "object" &&
+    typeof budgetStatusAlias === "object" &&
+    !Array.isArray(budgetStatus) &&
+    !Array.isArray(budgetStatusAlias) &&
+    !valuesEqual(budgetStatus, budgetStatusAlias)
+  ) {
+    errors.push({
+      code: "budget.status.alias.inconsistent",
+      field: "budgetStatus/budget_status",
+      message: "budgetStatus must match budget_status.",
+    });
+  }
+}
+
+function isValidClassificationMetadata(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    DIFFICULTIES.has(value.difficulty) &&
+    RISKS.has(value.risk) &&
+    CONTEXT_NEEDS.has(value.context_need) &&
+    VERIFICATION_LEVELS.has(value.verification) &&
+    typeof value.confidence === "number" &&
+    value.confidence >= 0 &&
+    value.confidence <= 1 &&
+    Array.isArray(value.reasoning)
+  );
+}
+
+function isValidTaskRoutingMetadata(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    MODEL_TIERS.has(value.model_tier) &&
+    isValidSelectedModel(value.selected_model) &&
+    typeof value.reason === "string" &&
+    value.reason.trim().length > 0 &&
+    Array.isArray(value.escalation_triggers)
+  );
+}
+
+function validateSelectedModelConsistency({
+  selectedModel,
+  expectedTier,
+  modelRegistry,
+  codePrefix,
+  taskId,
+  errors,
+}) {
+  if (!isValidSelectedModel(selectedModel)) {
+    errors.push({
+      code: `${codePrefix}.selected_model.invalid`,
+      task_id: taskId,
+      message: "Selected model must include provider, model, and tier.",
+    });
+    return;
+  }
+
+  if (selectedModel.tier !== expectedTier) {
+    errors.push({
+      code: `${codePrefix}.selected_model.tier.inconsistent`,
+      task_id: taskId,
+      message: "Selected model tier must match the routed task tier.",
+    });
+  }
+
+  if (!modelRegistryHasSelectedModel(modelRegistry, selectedModel)) {
+    errors.push({
+      code: `${codePrefix}.selected_model.unknown`,
+      task_id: taskId,
+      message: "Selected model must exist in the model registry.",
+    });
+  }
+}
+
+function isValidSelectedModel(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof value.provider === "string" &&
+    value.provider.trim().length > 0 &&
+    typeof value.model === "string" &&
+    value.model.trim().length > 0 &&
+    MODEL_TIERS.has(value.tier)
+  );
+}
+
+function modelRegistryHasSelectedModel(modelRegistry, selectedModel) {
+  return modelRegistry.some(
+    (entry) =>
+      entry?.provider === selectedModel.provider &&
+      entry?.model === selectedModel.model &&
+      entry?.tier === selectedModel.tier
+  );
+}
+
+function isValidModelTierAliases(value) {
+  return value.cheap === "cheap" && value.standard === "standard" && value.premium === "premium";
+}
+
+function isValidModelRegistryEntry(entry) {
+  return (
+    entry &&
+    typeof entry === "object" &&
+    !Array.isArray(entry) &&
+    typeof entry.provider === "string" &&
+    entry.provider.trim().length > 0 &&
+    typeof entry.model === "string" &&
+    entry.model.trim().length > 0 &&
+    MODEL_TIERS.has(entry.tier) &&
+    entry.cost_hint &&
+    typeof entry.cost_hint === "object" &&
+    !Array.isArray(entry.cost_hint) &&
+    typeof entry.context_window === "number" &&
+    Array.isArray(entry.tool_support) &&
+    Array.isArray(entry.strengths) &&
+    Array.isArray(entry.blocked_task_types)
+  );
+}
+
+function validatePolicyStatus(plan, errors) {
+  const policyStatus = plan.policyStatus;
+  const policyStatusAlias = plan.policy_status;
+
+  for (const [field, value] of [
+    ["policyStatus", policyStatus],
+    ["policy_status", policyStatusAlias],
+  ]) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      errors.push({
+        code: "policy.status.required",
+        field,
+        message: `Plan must include ${field} metadata.`,
+      });
+      continue;
+    }
+
+    if (typeof value.allowed !== "boolean" || !Array.isArray(value.violations)) {
+      errors.push({
+        code: "policy.status.invalid",
+        field,
+        message: `${field} must include allowed and violations fields.`,
+      });
+    }
+  }
+
+  if (
+    policyStatus &&
+    policyStatusAlias &&
+    typeof policyStatus === "object" &&
+    typeof policyStatusAlias === "object" &&
+    !Array.isArray(policyStatus) &&
+    !Array.isArray(policyStatusAlias) &&
+    !valuesEqual(policyStatus, policyStatusAlias)
+  ) {
+    errors.push({
+      code: "policy.status.alias.inconsistent",
+      field: "policyStatus/policy_status",
+      message: "policyStatus must match policy_status.",
+    });
+  }
+}
+
 function validateDependencies(plan, tasks, taskIds, errors) {
   const graph = new Map(tasks.map((task) => [task.task_id, new Set(task.depends_on ?? [])]));
 
@@ -600,6 +1098,7 @@ function taskGraphTaskMatchesPlanTask(graphTask, task) {
     graphTask.difficulty === task.difficulty &&
     graphTask.risk === task.risk &&
     graphTask.model_tier === task.model_tier &&
+    graphTask.final_verification === task.final_verification &&
     arraysEqual(graphTask.depends_on, task.depends_on)
   );
 }

@@ -24,6 +24,14 @@ export function createReport(record) {
     planReport: record.plan.planReport,
     planningPrompt: record.plan.planningPrompt,
     modelRouting: tierCounts,
+    modelRegistry: record.plan.modelRegistry,
+    modelTierAliases: record.plan.modelTierAliases,
+    routingPolicy: record.plan.routingPolicy,
+    budgetPolicy: record.plan.budgetPolicy,
+    escalationPolicy: record.plan.escalationPolicy,
+    budgetStatus: record.plan.budgetStatus,
+    policyStatus: record.plan.policyStatus,
+    routingTrace: record.plan.routingTrace,
     estimatedCost: record.plan.estimatedCost,
     verification: record.verification,
     events: record.events,
@@ -45,6 +53,28 @@ export function formatReportMarkdown(report) {
     ``,
     `## Model Routing`,
     ...Object.entries(report.modelRouting).map(([tier, count]) => `- ${tier}: ${count}`),
+    ``,
+    `## Budget`,
+    `- allowed: ${report.budgetStatus?.allowed ?? "unknown"}`,
+    `- estimated cost: ${report.budgetStatus?.currency ?? "USD"} ${report.budgetStatus?.estimatedCost ?? 0}`,
+    `- estimated calls: ${report.budgetStatus?.estimatedCalls ?? 0}`,
+    `- reserved retries: ${report.budgetStatus?.estimatedRetries ?? 0}`,
+    ...(report.budgetStatus?.violations?.length
+      ? report.budgetStatus.violations.map((violation) => `- violation: ${violation.code}`)
+      : ["- violations: none"]),
+    ``,
+    `## Policy`,
+    `- allowed: ${report.policyStatus?.allowed ?? "unknown"}`,
+    ...(report.policyStatus?.violations?.length
+      ? report.policyStatus.violations.map((violation) => `- violation: ${violation.code}`)
+      : ["- violations: none"]),
+    ``,
+    `## Routing Trace`,
+    ...(report.routingTrace?.length
+      ? report.routingTrace.map(
+          (route) => `- ${route.task_id}: ${route.model_tier} (${route.reason})`
+        )
+      : ["- skipped: no routing trace recorded."]),
     ``,
     `## Approval`,
     `- status: ${report.approval?.status ?? "unknown"}`,

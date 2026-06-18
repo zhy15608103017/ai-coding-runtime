@@ -6,32 +6,16 @@ import {
   normalizeTaskContract,
   validateRuntimePlan,
 } from "./contracts.js";
-
-const MODEL_TIERS = [
-  {
-    id: "cheap",
-    label: "Cheap",
-    description: "Low-cost tier for read-only analysis and low-risk generation.",
-  },
-  {
-    id: "standard",
-    label: "Standard",
-    description: "Balanced tier for local code changes with ordinary risk.",
-  },
-  {
-    id: "premium",
-    label: "Premium",
-    description: "Strong tier for high-risk work, hard verification, and final review.",
-  },
-];
-
-const DIFFICULTY_ORDER = new Map([
-  ["L0", 0],
-  ["L1", 1],
-  ["L2", 2],
-  ["L3", 3],
-  ["L4", 4],
-]);
+import {
+  DEFAULT_BUDGET_POLICY,
+  DEFAULT_ESCALATION_POLICY,
+  DEFAULT_MODEL_REGISTRY,
+  DEFAULT_MODEL_TIERS as MODEL_TIERS,
+  DEFAULT_ROUTING_POLICY,
+  MODEL_TIER_ALIASES,
+  routePlan,
+  routeTask as routeTaskWithPolicy,
+} from "./router.js";
 
 const DEFAULT_ESTIMATED_COST = {
   currency: "USD",
@@ -41,61 +25,52 @@ const DEFAULT_ESTIMATED_COST = {
 };
 
 export function routeTask(task) {
-  const difficulty = task.difficulty ?? "L1";
-  const risk = task.risk ?? "low";
-  const contextNeed = task.contextNeed ?? task.context_need ?? "low";
-  const verification = task.verification ?? "easy";
-
-  const reasons = [];
-  let modelTier = "cheap";
-
-  if (task.finalVerification) {
-    modelTier = "premium";
-    reasons.push("final verification always uses the premium tier");
-  } else if (difficultyAtLeast(difficulty, "L3")) {
-    modelTier = "premium";
-    reasons.push(`${difficulty} tasks require stronger reasoning`);
-  } else if (risk === "high") {
-    modelTier = "premium";
-    reasons.push("high-risk work requires premium review");
-  } else if (verification === "hard") {
-    modelTier = "premium";
-    reasons.push("hard-to-verify work requires premium review");
-  } else if (
-    difficultyAtLeast(difficulty, "L2") ||
-    risk === "medium" ||
-    contextNeed === "medium" ||
-    verification === "medium"
-  ) {
-    modelTier = "standard";
-    reasons.push("task needs the standard tier because risk, context, or verification is non-trivial");
-  } else {
-    reasons.push("low-risk, easy-to-verify task can use the cheap tier");
-  }
-
-  return {
-    modelTier,
-    reasoning: reasons,
-  };
+  return routeTaskWithPolicy(task);
 }
 
-export function createRuntimePlan({ request, now = new Date() }) {
+export function createRuntimePlan({
+  request,
+  now = new Date(),
+  modelRegistry = DEFAULT_MODEL_REGISTRY,
+  routingPolicy = DEFAULT_ROUTING_POLICY,
+  budgetPolicy = DEFAULT_BUDGET_POLICY,
+  escalationPolicy = DEFAULT_ESCALATION_POLICY,
+  policyViolations = [],
+} = {}) {
   if (!request || typeof request !== "string" || request.trim().length === 0) {
     throw new TypeError("createRuntimePlan requires a non-empty request string.");
   }
 
+  const effectiveRoutingPolicy = mergeRoutingPolicy(routingPolicy);
+  const effectiveBudgetPolicy = {
+    ...DEFAULT_BUDGET_POLICY,
+    ...(budgetPolicy ?? {}),
+  };
+  const effectiveEscalationPolicy = {
+    ...DEFAULT_ESCALATION_POLICY,
+    ...(escalationPolicy ?? {}),
+  };
+  const effectiveModelRegistry = Array.isArray(modelRegistry) ? modelRegistry : DEFAULT_MODEL_REGISTRY;
   const createdAt = now.toISOString();
   const planId = createId("plan", request, createdAt);
   const taskDrafts = createDefaultTaskDrafts(request.trim());
-  const tasks = taskDrafts.map((draft) => {
-    const routing = routeTask(draft);
+  const routedPlan = routePlan(taskDrafts, {
+    modelRegistry: effectiveModelRegistry,
+    routingPolicy: effectiveRoutingPolicy,
+    budgetPolicy: effectiveBudgetPolicy,
+  });
+  const policyStatus = createPolicyStatus(policyViolations);
+  const tasks = taskDrafts.map((draft, index) => {
+    const routing = routedPlan.routes[index];
 
     return normalizeTaskContract({
       ...draft,
       task_id: draft.id,
       modelTier: routing.modelTier,
       model_tier: routing.modelTier,
-      routingReason: routing.reasoning,
+      routingReason: routing.routingReason,
+      classification: routing.classification,
+      routing: routing.routing,
     });
   });
   const dependencies = tasks.flatMap((task) =>
@@ -105,7 +80,7 @@ export function createRuntimePlan({ request, now = new Date() }) {
     }))
   );
   const approval = createApprovalGate(tasks);
-  const estimatedCost = DEFAULT_ESTIMATED_COST;
+  const estimatedCost = createEstimatedCost(routedPlan.budgetStatus);
   const riskSummary = summarizeRisk(tasks);
   const planningPrompt = createPlanningPrompt({ request: request.trim() });
   const basePlan = {
@@ -114,6 +89,22 @@ export function createRuntimePlan({ request, now = new Date() }) {
     request: request.trim(),
     createdAt,
     modelTiers: MODEL_TIERS,
+    modelTierAliases: MODEL_TIER_ALIASES,
+    model_tier_aliases: MODEL_TIER_ALIASES,
+    modelRegistry: effectiveModelRegistry,
+    model_registry: effectiveModelRegistry,
+    routingPolicy: effectiveRoutingPolicy,
+    routing_policy: effectiveRoutingPolicy,
+    budgetPolicy: effectiveBudgetPolicy,
+    budget_policy: effectiveBudgetPolicy,
+    escalationPolicy: effectiveEscalationPolicy,
+    escalation_policy: effectiveEscalationPolicy,
+    budgetStatus: routedPlan.budgetStatus,
+    budget_status: routedPlan.budgetStatus,
+    policyStatus,
+    policy_status: policyStatus,
+    routingTrace: routedPlan.routingTrace,
+    routing_trace: routedPlan.routingTrace,
     tasks,
     dependencies,
     approvalRequired: approval.required,
@@ -151,6 +142,31 @@ export function createRuntimePlan({ request, now = new Date() }) {
     ...plan,
     planReport,
     plan_report: planReport,
+  };
+}
+
+function mergeRoutingPolicy(routingPolicy) {
+  const override = routingPolicy ?? {};
+
+  return {
+    ...DEFAULT_ROUTING_POLICY,
+    ...override,
+    difficultyMinTier: {
+      ...DEFAULT_ROUTING_POLICY.difficultyMinTier,
+      ...(override.difficultyMinTier ?? {}),
+    },
+    riskMinTier: {
+      ...DEFAULT_ROUTING_POLICY.riskMinTier,
+      ...(override.riskMinTier ?? {}),
+    },
+    contextMinTier: {
+      ...DEFAULT_ROUTING_POLICY.contextMinTier,
+      ...(override.contextMinTier ?? {}),
+    },
+    verificationMinTier: {
+      ...DEFAULT_ROUTING_POLICY.verificationMinTier,
+      ...(override.verificationMinTier ?? {}),
+    },
   };
 }
 
@@ -364,10 +380,6 @@ function isReadOnlyPlanningRequest(request) {
   return readOnlyMarkers.some((marker) => normalized.includes(marker));
 }
 
-function difficultyAtLeast(actual, expected) {
-  return (DIFFICULTY_ORDER.get(actual) ?? 1) >= (DIFFICULTY_ORDER.get(expected) ?? 1);
-}
-
 function summarizeRisk(tasks) {
   const counts = tasks.reduce(
     (accumulator, task) => {
@@ -386,6 +398,24 @@ function summarizeRisk(tasks) {
   }
 
   return `low: ${counts.low} low-risk task(s)`;
+}
+
+function createEstimatedCost(budgetStatus) {
+  return {
+    ...DEFAULT_ESTIMATED_COST,
+    currency: budgetStatus.currency,
+    maximum: budgetStatus.estimatedCost,
+    note: "V0 estimates routing cost from model tier hints but does not call real model providers.",
+  };
+}
+
+function createPolicyStatus(policyViolations) {
+  const violations = Array.isArray(policyViolations) ? policyViolations : [];
+
+  return {
+    allowed: violations.length === 0,
+    violations,
+  };
 }
 
 function createId(prefix, request, createdAt) {

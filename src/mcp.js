@@ -5,12 +5,15 @@ import { asMcpToolResult, callRuntimeTool, RUNTIME_TOOLS } from "./runtime/tools
 
 const PROTOCOL_VERSION = "2025-06-18";
 
-export async function handleMcpJsonRpc(message, { store = new FileExecutionStore() } = {}) {
+export async function handleMcpJsonRpc(
+  message,
+  { store = new FileExecutionStore(), runtimeOptions = {} } = {}
+) {
   const request = typeof message === "string" ? JSON.parse(message) : message;
   const isNotification = request.id === undefined || request.id === null;
 
   try {
-    const result = await handleMcpMethod(request.method, request.params ?? {}, { store });
+    const result = await handleMcpMethod(request.method, request.params ?? {}, { store, runtimeOptions });
 
     if (isNotification) {
       return undefined;
@@ -37,7 +40,12 @@ export async function handleMcpJsonRpc(message, { store = new FileExecutionStore
   }
 }
 
-export async function startMcpStdioServer({ input = process.stdin, output = process.stdout, store } = {}) {
+export async function startMcpStdioServer({
+  input = process.stdin,
+  output = process.stdout,
+  store,
+  runtimeOptions = {},
+} = {}) {
   const lineReader = readline.createInterface({
     input,
     crlfDelay: Number.POSITIVE_INFINITY,
@@ -49,7 +57,7 @@ export async function startMcpStdioServer({ input = process.stdin, output = proc
       continue;
     }
 
-    const response = await handleMcpJsonRpc(line, { store });
+    const response = await handleMcpJsonRpc(line, { store, runtimeOptions });
 
     if (response) {
       output.write(`${JSON.stringify(response)}\n`);
@@ -57,7 +65,7 @@ export async function startMcpStdioServer({ input = process.stdin, output = proc
   }
 }
 
-async function handleMcpMethod(method, params, { store }) {
+async function handleMcpMethod(method, params, { store, runtimeOptions }) {
   switch (method) {
     case "initialize":
       return {
@@ -83,7 +91,7 @@ async function handleMcpMethod(method, params, { store }) {
     case "tools/call": {
       const toolName = params.name;
       const args = params.arguments ?? {};
-      const value = await callRuntimeTool(toolName, args, { store });
+      const value = await callRuntimeTool(toolName, args, { store, runtimeOptions });
       return asMcpToolResult(value);
     }
     default: {

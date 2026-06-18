@@ -6,12 +6,191 @@ import test from "node:test";
 
 import {
   callRuntimeTool,
+  classifyTask,
   createRuntimePlan,
+  DEFAULT_MODEL_REGISTRY,
+  evaluateBudgetPolicy,
+  evaluateEscalation,
   FileExecutionStore,
   loadRuntimeConfig,
   routeTask,
   validateRuntimePlan,
 } from "../src/index.js";
+
+test("classifyTask returns Phase 4 classifier fields", () => {
+  const classification = classifyTask({
+    difficulty: "L2",
+    risk: "medium",
+    contextNeed: "medium",
+    verification: "medium",
+    allowedFiles: ["src/runtime/planner.js"],
+  });
+
+  assert.equal(classification.difficulty, "L2");
+  assert.equal(classification.risk, "medium");
+  assert.equal(classification.context_need, "medium");
+  assert.equal(classification.verification, "medium");
+  assert.equal(classification.edits_files, true);
+  assert.equal(typeof classification.confidence, "number");
+  assert.ok(classification.confidence > 0);
+  assert.ok(classification.confidence <= 1);
+  assert.ok(Array.isArray(classification.reasoning));
+  assert.ok(classification.reasoning.length > 0);
+});
+
+test("default model registry exposes Phase 4 capability fields", () => {
+  assert.deepEqual(
+    DEFAULT_MODEL_REGISTRY.map((entry) => entry.tier),
+    ["cheap", "standard", "premium"]
+  );
+
+  for (const entry of DEFAULT_MODEL_REGISTRY) {
+    assert.equal(typeof entry.provider, "string");
+    assert.equal(typeof entry.model, "string");
+    assert.equal(typeof entry.cost_hint, "object");
+    assert.equal(typeof entry.context_window, "number");
+    assert.ok(Array.isArray(entry.tool_support));
+    assert.ok(Array.isArray(entry.strengths));
+    assert.ok(Array.isArray(entry.blocked_task_types));
+  }
+});
+
+test("routeTask explains file-editing and final verification routing", () => {
+  const fileEditingRoute = routeTask({
+    difficulty: "L1",
+    risk: "low",
+    contextNeed: "low",
+    verification: "easy",
+    allowedFiles: ["src/runtime/router.js"],
+  });
+
+  assert.equal(fileEditingRoute.modelTier, "standard");
+  assert.equal(fileEditingRoute.model_tier, "standard");
+  assert.equal(fileEditingRoute.classification.edits_files, true);
+  assert.match(fileEditingRoute.routingReason.join(" "), /file-editing/i);
+  assert.equal(fileEditingRoute.selectedModel.tier, "standard");
+
+  const finalVerificationRoute = routeTask({
+    difficulty: "L1",
+    risk: "low",
+    contextNeed: "low",
+    verification: "easy",
+    finalVerification: true,
+  });
+
+  assert.equal(finalVerificationRoute.modelTier, "premium");
+  assert.match(finalVerificationRoute.routingReason.join(" "), /final verification/i);
+  assert.ok(finalVerificationRoute.escalationTriggers.includes("final_review"));
+});
+
+test("routeTask does not allow policy overrides to lower safety tiers", () => {
+  const fileEditingRoute = routeTask(
+    {
+      difficulty: "L1",
+      risk: "low",
+      verification: "easy",
+      allowedFiles: ["src/runtime/router.js"],
+    },
+    {
+      routingPolicy: {
+        fileEditingMinTier: "cheap",
+      },
+    }
+  );
+
+  assert.equal(fileEditingRoute.modelTier, "standard");
+
+  const finalVerificationRoute = routeTask(
+    {
+      difficulty: "L1",
+      risk: "low",
+      verification: "easy",
+      finalVerification: true,
+    },
+    {
+      routingPolicy: {
+        finalVerificationTier: "cheap",
+      },
+    }
+  );
+
+  assert.equal(finalVerificationRoute.modelTier, "premium");
+});
+
+test("evaluateBudgetPolicy refuses routes that exceed cost, call, or retry limits", () => {
+  const routes = [
+    routeTask({ difficulty: "L2", risk: "medium", verification: "medium" }),
+    routeTask({ difficulty: "L4", risk: "high", verification: "hard", finalVerification: true }),
+  ];
+
+  const budgetStatus = evaluateBudgetPolicy({
+    routes,
+    budgetPolicy: {
+      maxCostPerRun: 0.01,
+      maxCallsPerRun: 1,
+      maxRetryCount: 0,
+    },
+  });
+
+  assert.equal(budgetStatus.allowed, false);
+  assert.ok(budgetStatus.estimatedCost > 0.01);
+  assert.equal(budgetStatus.estimatedCalls, 2);
+  assert.ok(budgetStatus.violations.some((violation) => violation.code === "budget.cost.exceeded"));
+  assert.ok(budgetStatus.violations.some((violation) => violation.code === "budget.calls.exceeded"));
+  assert.ok(budgetStatus.violations.some((violation) => violation.code === "budget.retries.exceeded"));
+});
+
+test("evaluateEscalation records stronger-tier trace decisions", () => {
+  const route = routeTask({
+    id: "T-001",
+    difficulty: "L1",
+    risk: "low",
+    verification: "easy",
+  });
+
+  const failedAttempt = evaluateEscalation({
+    task: { id: "T-001", difficulty: "L1", risk: "low" },
+    route,
+    outcome: {
+      failedTests: true,
+      malformedOutput: true,
+    },
+  });
+
+  assert.equal(failedAttempt.shouldEscalate, true);
+  assert.equal(failedAttempt.fromTier, "cheap");
+  assert.equal(failedAttempt.toTier, "standard");
+  assert.ok(failedAttempt.reasons.includes("failed_tests"));
+  assert.ok(failedAttempt.reasons.includes("malformed_output"));
+  assert.equal(failedAttempt.trace.task_id, "T-001");
+  assert.equal(failedAttempt.trace.from_tier, "cheap");
+  assert.equal(failedAttempt.trace.to_tier, "standard");
+
+  const policyViolation = evaluateEscalation({
+    task: { id: "T-004", difficulty: "L4", risk: "high" },
+    route: routeTask({ difficulty: "L4", risk: "high", verification: "hard" }),
+    outcome: {
+      userPolicyViolation: true,
+    },
+  });
+
+  assert.equal(policyViolation.toTier, "premium");
+  assert.equal(policyViolation.requiresHumanApproval, true);
+  assert.ok(policyViolation.reasons.includes("user_policy_violation"));
+
+  const accessViolation = evaluateEscalation({
+    task: { id: "T-005", difficulty: "L1", risk: "low" },
+    route,
+    outcome: {
+      forbiddenFileAccess: true,
+      lowClassifierConfidence: true,
+    },
+  });
+
+  assert.ok(accessViolation.reasons.includes("forbidden_file_access"));
+  assert.ok(accessViolation.reasons.includes("low_classifier_confidence"));
+  assert.equal(accessViolation.requiresHumanApproval, true);
+});
 
 test("createRuntimePlan returns task contracts with model routing", () => {
   const plan = createRuntimePlan({
@@ -34,6 +213,17 @@ test("createRuntimePlan returns task contracts with model routing", () => {
   assert.match(plan.planningPrompt, /Task Contract/);
   assert.match(plan.planningPrompt, /depends_on/);
   assert.equal(plan.planning_prompt, plan.planningPrompt);
+  assert.deepEqual(plan.modelTierAliases, {
+    cheap: "cheap",
+    standard: "standard",
+    premium: "premium",
+  });
+  assert.equal(plan.modelRegistry.length, 3);
+  assert.equal(plan.routingPolicy.finalVerificationTier, "premium");
+  assert.equal(plan.budgetPolicy.maxCallsPerRun, 20);
+  assert.equal(plan.escalationPolicy.triggers.includes("failed_tests"), true);
+  assert.equal(plan.budgetStatus.allowed, true);
+  assert.equal(plan.routingTrace.length, plan.tasks.length);
 
   const ids = new Set(plan.tasks.map((task) => task.id));
   assert.equal(ids.size, plan.tasks.length);
@@ -47,17 +237,28 @@ test("createRuntimePlan returns task contracts with model routing", () => {
   assert.equal(plan.tasks[0].title, "读取项目结构与需求上下文");
   assert.equal(plan.tasks[0].context_need, plan.tasks[0].contextNeed);
   assert.equal(plan.tasks[0].verification, "easy");
+  assert.equal(plan.tasks[0].classification.difficulty, "L0");
+  assert.equal(plan.tasks[0].routing.model_tier, "cheap");
+  assert.match(plan.tasks[0].routing.reason, /L0/);
 
   const implementationTask = plan.tasks.find((task) =>
     task.title.includes("实现")
   );
   assert.ok(implementationTask);
   assert.equal(implementationTask.modelTier, "standard");
+  assert.equal(implementationTask.classification.edits_files, true);
+  assert.equal(implementationTask.routing.selected_model.tier, "standard");
   assert.ok(implementationTask.acceptance.length > 0);
 
   const finalTask = plan.tasks.at(-1);
   assert.equal(finalTask.title, "最终审查与交付报告");
   assert.equal(finalTask.modelTier, "premium");
+  assert.equal(finalTask.finalVerification, true);
+  assert.equal(finalTask.final_verification, true);
+  assert.equal(plan.taskGraph.tasks.at(-1).final_verification, true);
+  assert.equal(plan.tasks[0].final_verification, false);
+  assert.equal(finalTask.routing.selected_model.tier, "premium");
+  assert.ok(finalTask.routing.escalation_triggers.includes("final_review"));
   assert.deepEqual(finalTask.dependsOn, [plan.tasks.at(-2).id]);
 });
 
@@ -158,6 +359,10 @@ test("FileExecutionStore writes and reads execution records", async () => {
     assert.equal(record.plan.planReport.task_graph.run_id, record.runId);
     assert.equal(record.events[0].type, "run.created");
     assert.equal(record.events[1].type, "approval.required");
+    assert.equal(
+      record.events.filter((event) => event.type === "task.routed").length,
+      plan.tasks.length
+    );
 
     await store.appendEvent(record.runId, {
       type: "task.routed",
@@ -167,9 +372,9 @@ test("FileExecutionStore writes and reads execution records", async () => {
     });
 
     const loaded = await store.readRecord(record.runId);
-    assert.equal(loaded.events.length, 3);
-    assert.equal(loaded.events[2].type, "task.routed");
-    assert.equal(loaded.events[2].taskId, plan.tasks[0].id);
+    assert.equal(loaded.events.length, 2 + plan.tasks.length + 1);
+    assert.equal(loaded.events.at(-1).type, "task.routed");
+    assert.equal(loaded.events.at(-1).taskId, plan.tasks[0].id);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -486,6 +691,7 @@ test("validateRuntimePlan rejects task contracts missing snake_case output const
           allowed_files: _allowedFiles,
           forbidden_actions: _forbiddenActions,
           expected_output: _expectedOutput,
+          final_verification: _finalVerification,
           ...rest
         } = task;
         return rest;
@@ -497,6 +703,7 @@ test("validateRuntimePlan rejects task contracts missing snake_case output const
     assert.ok(validation.errors.some((error) => error.code === "task.allowed_files.required"));
     assert.ok(validation.errors.some((error) => error.code === "task.forbidden_actions.required"));
     assert.ok(validation.errors.some((error) => error.code === "task.expected_output.required"));
+    assert.ok(validation.errors.some((error) => error.code === "task.final_verification.required"));
 
     await assert.rejects(store.createRecord(tamperedPlan), /task.allowed_files.required/);
   } finally {
@@ -629,6 +836,456 @@ test("validateRuntimePlan rejects plans missing task graph schema", () => {
 
   assert.equal(validation.valid, false);
   assert.ok(validation.errors.some((error) => error.code === "task_graph.required"));
+});
+
+test("validateRuntimePlan rejects missing Phase 4 routing metadata", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-routing-missing-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const plan = createRuntimePlan({
+      request: "create a plan with routing trace removed",
+    });
+    const tamperedPlan = {
+      ...plan,
+      routingTrace: undefined,
+      routing_trace: undefined,
+    };
+
+    const validation = validateRuntimePlan(tamperedPlan);
+    assert.equal(validation.valid, false);
+    assert.ok(validation.errors.some((error) => error.code === "routing.trace.required"));
+
+    await assert.rejects(store.createRecord(tamperedPlan), /routing.trace.required/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("validateRuntimePlan rejects incomplete Phase 4 task routing metadata", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-routing-incomplete-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const plan = createRuntimePlan({
+      request: "create a plan with incomplete routing metadata",
+    });
+    const tamperedPlan = {
+      ...plan,
+      tasks: plan.tasks.map((task, index) =>
+        index === 0
+          ? {
+              ...task,
+              classification: {},
+              routing: {},
+            }
+          : task
+      ),
+    };
+
+    const validation = validateRuntimePlan(tamperedPlan);
+    assert.equal(validation.valid, false);
+    assert.ok(validation.errors.some((error) => error.code === "task.classification.invalid"));
+    assert.ok(validation.errors.some((error) => error.code === "task.routing.invalid"));
+
+    await assert.rejects(store.createRecord(tamperedPlan), /task.classification.invalid/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("validateRuntimePlan rejects incomplete model registry entries", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-model-registry-invalid-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const plan = createRuntimePlan({
+      request: "create a plan with incomplete model registry metadata",
+    });
+    const tamperedPlan = {
+      ...plan,
+      modelRegistry: [{}],
+      model_registry: [{}],
+    };
+
+    const validation = validateRuntimePlan(tamperedPlan);
+    assert.equal(validation.valid, false);
+    assert.ok(validation.errors.some((error) => error.code === "model.registry.entry.invalid"));
+
+    await assert.rejects(store.createRecord(tamperedPlan), /model.registry.entry.invalid/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("validateRuntimePlan rejects missing or drifted model tier aliases", () => {
+  const plan = createRuntimePlan({
+    request: "create a plan with tampered model tier aliases",
+  });
+  const missingAliasesPlan = {
+    ...plan,
+    modelTierAliases: undefined,
+    model_tier_aliases: undefined,
+  };
+  const driftedAliasesPlan = {
+    ...plan,
+    model_tier_aliases: {
+      ...plan.model_tier_aliases,
+      premium: "standard",
+    },
+  };
+
+  const missingValidation = validateRuntimePlan(missingAliasesPlan);
+  const driftedValidation = validateRuntimePlan(driftedAliasesPlan);
+
+  assert.equal(missingValidation.valid, false);
+  assert.ok(missingValidation.errors.some((error) => error.code === "model.tier_aliases.required"));
+  assert.equal(driftedValidation.valid, false);
+  assert.ok(driftedValidation.errors.some((error) => error.code === "model.tier_aliases.invalid"));
+  assert.ok(driftedValidation.errors.some((error) => error.code === "model.tier_aliases.alias.inconsistent"));
+});
+
+test("validateRuntimePlan rejects routing trace duplicates and missing tasks", () => {
+  const plan = createRuntimePlan({
+    request: "create a plan with duplicate routing trace entries",
+  });
+  const duplicateTrace = plan.routingTrace.map((route, index) =>
+    index === 1
+      ? {
+          ...route,
+          task_id: plan.routingTrace[0].task_id,
+        }
+      : route
+  );
+  const tamperedPlan = {
+    ...plan,
+    routingTrace: duplicateTrace,
+    routing_trace: duplicateTrace,
+  };
+
+  const validation = validateRuntimePlan(tamperedPlan);
+
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some((error) => error.code === "routing.trace.task.duplicate"));
+  assert.ok(validation.errors.some((error) => error.code === "routing.trace.task.missing"));
+});
+
+test("validateRuntimePlan rejects task routing metadata that drifts from task contracts", () => {
+  const plan = createRuntimePlan({
+    request: "create a plan with mismatched task routing metadata",
+  });
+  const tamperedTasks = plan.tasks.map((task, index) =>
+    index === 0
+      ? {
+          ...task,
+          routing: {
+            ...task.routing,
+            model_tier: task.model_tier === "cheap" ? "standard" : "cheap",
+          },
+        }
+      : task
+  );
+  const tamperedPlan = {
+    ...plan,
+    tasks: tamperedTasks,
+  };
+
+  const validation = validateRuntimePlan(tamperedPlan);
+
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some((error) => error.code === "task.routing.model_tier.inconsistent"));
+});
+
+test("validateRuntimePlan rejects selected models that drift from routed tiers", () => {
+  const plan = createRuntimePlan({
+    request: "create a plan with mismatched selected model metadata",
+  });
+  const cheapModel = plan.modelRegistry.find((entry) => entry.tier === "cheap");
+  const finalTaskId = plan.tasks.at(-1).task_id;
+  const tamperedTasks = plan.tasks.map((task) =>
+    task.task_id === finalTaskId
+      ? {
+          ...task,
+          routing: {
+            ...task.routing,
+            selected_model: cheapModel,
+          },
+        }
+      : task
+  );
+  const tamperedTrace = plan.routingTrace.map((route) =>
+    route.task_id === finalTaskId
+      ? {
+          ...route,
+          selected_model: cheapModel,
+        }
+      : route
+  );
+  const tamperedPlan = {
+    ...plan,
+    tasks: tamperedTasks,
+    routingTrace: tamperedTrace,
+    routing_trace: tamperedTrace,
+  };
+
+  const validation = validateRuntimePlan(tamperedPlan);
+
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some((error) => error.code === "task.routing.selected_model.tier.inconsistent"));
+  assert.ok(validation.errors.some((error) => error.code === "routing.trace.selected_model.tier.inconsistent"));
+});
+
+test("validateRuntimePlan rejects selected models outside the model registry", () => {
+  const plan = createRuntimePlan({
+    request: "create a plan with an unknown selected model",
+  });
+  const unknownModel = {
+    provider: "unknown-provider",
+    model: "unknown-model",
+    tier: plan.tasks[0].model_tier,
+  };
+  const tamperedTasks = plan.tasks.map((task, index) =>
+    index === 0
+      ? {
+          ...task,
+          routing: {
+            ...task.routing,
+            selected_model: unknownModel,
+          },
+        }
+      : task
+  );
+  const tamperedTrace = plan.routingTrace.map((route, index) =>
+    index === 0
+      ? {
+          ...route,
+          selected_model: unknownModel,
+        }
+      : route
+  );
+  const tamperedPlan = {
+    ...plan,
+    tasks: tamperedTasks,
+    routingTrace: tamperedTrace,
+    routing_trace: tamperedTrace,
+  };
+
+  const validation = validateRuntimePlan(tamperedPlan);
+
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some((error) => error.code === "task.routing.selected_model.unknown"));
+  assert.ok(validation.errors.some((error) => error.code === "routing.trace.selected_model.unknown"));
+});
+
+test("validateRuntimePlan rejects routing below safety floors", () => {
+  const plan = createRuntimePlan({
+    request: "create a plan with downgraded safe routing",
+  });
+  const downgradedTasks = plan.tasks.map((task) => {
+    if (task.classification.edits_files || task.finalVerification) {
+      return {
+        ...task,
+        modelTier: "cheap",
+        model_tier: "cheap",
+        classification: {
+          ...task.classification,
+          ...(task.classification.edits_files
+            ? {
+                edits_files: false,
+                editsFiles: false,
+              }
+            : {}),
+        },
+        routing: {
+          ...task.routing,
+          model_tier: "cheap",
+        },
+      };
+    }
+
+    return task;
+  });
+  const downgradedGraphTasks = plan.taskGraph.tasks.map((task) => {
+    const source = downgradedTasks.find((candidate) => candidate.task_id === task.task_id);
+    return {
+      ...task,
+      model_tier: source.model_tier,
+    };
+  });
+  const downgradedTrace = plan.routingTrace.map((route) => {
+    const source = downgradedTasks.find((task) => task.task_id === route.task_id);
+    return {
+      ...route,
+      model_tier: source.model_tier,
+    };
+  });
+  const tamperedPlan = {
+    ...plan,
+    tasks: downgradedTasks,
+    taskGraph: {
+      ...plan.taskGraph,
+      tasks: downgradedGraphTasks,
+    },
+    task_graph: {
+      ...plan.task_graph,
+      tasks: downgradedGraphTasks,
+    },
+    routingTrace: downgradedTrace,
+    routing_trace: downgradedTrace,
+  };
+
+  const validation = validateRuntimePlan(tamperedPlan);
+
+  assert.equal(validation.valid, false);
+  assert.ok(
+    validation.errors.some((error) => error.code === "task.classification.edits_files.inconsistent")
+  );
+  assert.ok(validation.errors.some((error) => error.code === "routing.safety.file_edit_tier"));
+  assert.ok(validation.errors.some((error) => error.code === "routing.safety.final_verification_tier"));
+});
+
+test("validateRuntimePlan rejects final verification downgrades when optional markers are removed", () => {
+  const plan = createRuntimePlan({
+    request: "create a plan with a downgraded final verification contract",
+  });
+  const finalTaskId = plan.tasks.at(-1).task_id;
+  const downgradedTasks = plan.tasks.map((task) => {
+    if (task.task_id !== finalTaskId) {
+      return task;
+    }
+
+    const { finalVerification: _finalVerification, ...taskWithoutCamelFinal } = task;
+    return {
+      ...taskWithoutCamelFinal,
+      final_verification: true,
+      modelTier: "cheap",
+      model_tier: "cheap",
+      routing: {
+        ...task.routing,
+        model_tier: "cheap",
+        escalation_triggers: task.routing.escalation_triggers.filter((trigger) => trigger !== "final_review"),
+      },
+    };
+  });
+  const downgradedGraphTasks = plan.taskGraph.tasks.map((task) =>
+    task.task_id === finalTaskId
+      ? {
+          ...task,
+          model_tier: "cheap",
+          final_verification: true,
+        }
+      : task
+  );
+  const downgradedTrace = plan.routingTrace.map((route) =>
+    route.task_id === finalTaskId
+      ? {
+          ...route,
+          model_tier: "cheap",
+          escalation_triggers: route.escalation_triggers.filter((trigger) => trigger !== "final_review"),
+        }
+      : route
+  );
+  const tamperedPlan = {
+    ...plan,
+    tasks: downgradedTasks,
+    taskGraph: {
+      ...plan.taskGraph,
+      tasks: downgradedGraphTasks,
+    },
+    task_graph: {
+      ...plan.task_graph,
+      tasks: downgradedGraphTasks,
+    },
+    routingTrace: downgradedTrace,
+    routing_trace: downgradedTrace,
+  };
+
+  const validation = validateRuntimePlan(tamperedPlan);
+
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some((error) => error.code === "routing.safety.final_verification_tier"));
+});
+
+test("FileExecutionStore refuses budget-disallowed plans before persistence", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-budget-refusal-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const plan = createRuntimePlan({
+      request: "implement a feature that is intentionally over budget",
+    });
+    const budgetStatus = {
+      ...plan.budgetStatus,
+      allowed: false,
+      violations: [
+        {
+          code: "budget.cost.exceeded",
+          limit: 0.01,
+          actual: plan.budgetStatus.estimatedCost,
+          message: "test budget limit exceeded",
+        },
+      ],
+    };
+    const overBudgetPlan = {
+      ...plan,
+      budgetStatus,
+      budget_status: budgetStatus,
+    };
+
+    assert.equal(validateRuntimePlan(overBudgetPlan).valid, true);
+    await assert.rejects(store.createRecord(overBudgetPlan), /budget.policy.violation/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("createRuntimePlan applies caller budget policy before persistence", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-budget-policy-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const plan = createRuntimePlan({
+      request: "implement a feature that exceeds a tiny budget",
+      budgetPolicy: {
+        maxCostPerRun: 0.01,
+        maxCallsPerRun: 1,
+        maxRetryCount: 0,
+      },
+    });
+
+    assert.equal(plan.budgetStatus.allowed, false);
+    assert.ok(plan.budgetStatus.violations.some((violation) => violation.code === "budget.cost.exceeded"));
+    assert.ok(plan.budgetStatus.violations.some((violation) => violation.code === "budget.calls.exceeded"));
+    assert.ok(plan.budgetStatus.violations.some((violation) => violation.code === "budget.retries.exceeded"));
+    await assert.rejects(store.createRecord(plan), /budget.policy.violation/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("FileExecutionStore refuses user policy violation plans before persistence", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-policy-refusal-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const plan = createRuntimePlan({
+      request: "implement a feature that violates a user policy",
+      policyViolations: [
+        {
+          code: "policy.user.violation",
+          message: "test user policy violation",
+        },
+      ],
+    });
+
+    assert.equal(plan.policyStatus.allowed, false);
+    assert.equal(plan.policy_status.allowed, false);
+    assert.ok(plan.policyStatus.violations.some((violation) => violation.code === "policy.user.violation"));
+    assert.equal(validateRuntimePlan(plan).valid, true);
+    await assert.rejects(store.createRecord(plan), /policy.status.violation/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("validateRuntimePlan rejects approval metadata that disagrees with task risk", async () => {
@@ -768,6 +1425,9 @@ test("loadRuntimeConfig merges defaults, config file, and environment overrides"
     assert.equal(config.server.mcpPath, "/mcp");
     assert.equal(config.storage.directory, dataDirectory);
     assert.equal(config.routing.finalVerificationTier, "premium");
+    assert.equal(config.routing.budgetPolicy.maxCallsPerRun, 20);
+    assert.equal(config.routing.budgetPolicy.maxRetryCount, 8);
+    assert.equal(config.routing.modelRegistry.length, 3);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

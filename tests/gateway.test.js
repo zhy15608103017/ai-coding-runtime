@@ -26,6 +26,10 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     assert.equal(estimate.validation.valid, true);
     assert.equal(estimate.planReport.approval.status, "required");
     assert.match(estimate.planningPrompt, /Task Contract/);
+    assert.equal(estimate.modelRegistry.length, 3);
+    assert.equal(estimate.budgetStatus.allowed, true);
+    assert.equal(estimate.routingTrace.length, estimate.tasks.length);
+    assert.equal(typeof estimate.tasks[0].classification.confidence, "number");
 
     const runResponse = await postJson(`${started.httpUrl}/api/runs`, {
       request: "为支付模块生成计划",
@@ -74,6 +78,9 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     assert.equal(report.approval.status, "approved");
     assert.equal(report.validation.valid, true);
     assert.match(report.planningPrompt, /Task Contract/);
+    assert.equal(report.budgetStatus.allowed, true);
+    assert.equal(report.routingTrace.length, report.taskGraph.length);
+    assert.equal(report.modelRegistry.length, 3);
   } finally {
     server.close();
     await rm(workspace, { recursive: true, force: true });
@@ -138,6 +145,58 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
     assert.match(called.result.structuredContent.runId, /^run_/);
     assert.equal(called.result.structuredContent.status, "approval_required");
     assert.equal(called.result.content[0].type, "text");
+  } finally {
+    server.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("HTTP gateway applies runtime budget policy to estimates and runs", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-http-budget-"));
+  const store = new FileExecutionStore({ workspace });
+  const server = createRuntimeHttpServer({
+    store,
+    runtimeOptions: {
+      budgetPolicy: {
+        maxCostPerRun: 0.01,
+        maxCallsPerRun: 1,
+        maxRetryCount: 0,
+      },
+    },
+  });
+  const started = await listen(server, { host: "127.0.0.1", port: 0 });
+
+  try {
+    const estimateResponse = await postJson(`${started.httpUrl}/api/estimate`, {
+      request: "implement an over-budget HTTP task",
+    });
+    assert.equal(estimateResponse.status, 200);
+    const estimate = await estimateResponse.json();
+    assert.equal(estimate.budgetStatus.allowed, false);
+    assert.ok(estimate.budgetStatus.violations.some((violation) => violation.code === "budget.cost.exceeded"));
+
+    const runResponse = await postJson(`${started.httpUrl}/api/runs`, {
+      request: "implement an over-budget HTTP task",
+    });
+    assert.equal(runResponse.status, 409);
+    const refused = await runResponse.json();
+    assert.match(refused.message, /budget.policy.violation/);
+
+    const mcpRunResponse = await postJson(`${started.httpUrl}/mcp`, {
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: {
+        name: "runtime_run",
+        arguments: {
+          request: "implement an over-budget HTTP MCP task",
+        },
+      },
+    });
+    assert.equal(mcpRunResponse.status, 200);
+    const mcpRun = await mcpRunResponse.json();
+    assert.equal(mcpRun.id, 7);
+    assert.match(mcpRun.error.message, /budget.policy.violation/);
   } finally {
     server.close();
     await rm(workspace, { recursive: true, force: true });

@@ -1,6 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import {
+  DEFAULT_BUDGET_POLICY,
+  DEFAULT_MODEL_REGISTRY,
+  DEFAULT_ROUTING_POLICY,
+  MODEL_TIER_ALIASES,
+} from "./router.js";
+
 export const DEFAULT_RUNTIME_CONFIG = {
   server: {
     host: "127.0.0.1",
@@ -14,6 +21,10 @@ export const DEFAULT_RUNTIME_CONFIG = {
   routing: {
     modelTiers: ["cheap", "standard", "premium"],
     finalVerificationTier: "premium",
+    modelTierAliases: MODEL_TIER_ALIASES,
+    modelRegistry: DEFAULT_MODEL_REGISTRY,
+    budgetPolicy: DEFAULT_BUDGET_POLICY,
+    policy: DEFAULT_ROUTING_POLICY,
   },
   verification: {
     commands: [],
