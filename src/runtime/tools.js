@@ -58,6 +58,20 @@ export const RUNTIME_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "runtime_approve",
+    description: "Approve a runtime run that is waiting at the human approval gate.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        runId: { type: "string" },
+        approvedBy: { type: "string" },
+        note: { type: "string" },
+      },
+      required: ["runId"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 export async function callRuntimeTool(name, args, { store }) {
@@ -78,6 +92,8 @@ export async function callRuntimeTool(name, args, { store }) {
       return reportRun(requireRunId(args), args, store);
     case "runtime_cancel":
       return cancelRun(requireRunId(args), args, store);
+    case "runtime_approve":
+      return approveRun(requireRunId(args), args, store);
     default:
       throw new Error(`Unknown runtime tool: ${name}`);
   }
@@ -105,6 +121,11 @@ function createEstimate(request) {
     modelTiers: plan.modelTiers,
     estimatedCost: plan.estimatedCost,
     approvalRequired: plan.approvalRequired,
+    approval: plan.approval,
+    validation: plan.validation,
+    taskGraph: plan.taskGraph,
+    planReport: plan.planReport,
+    planningPrompt: plan.planningPrompt,
     riskSummary: plan.riskSummary,
     tasks: plan.tasks.map((task) => ({
       id: task.id,
@@ -202,6 +223,57 @@ async function cancelRun(runId, args, store) {
   return summarizeRecord(record);
 }
 
+async function approveRun(runId, args, store) {
+  const approvedAt = new Date().toISOString();
+  const approvedBy = args?.approvedBy ?? "unknown";
+  const note = args?.note ?? "approved";
+  const record = await store.updateRecord(runId, (current) => {
+    if (current.status !== "approval_required") {
+      throw conflictError(`Run ${runId} must be in approval_required status before approval.`);
+    }
+
+    if (current.plan.approval?.required !== true) {
+      throw conflictError(`Run ${runId} does not require human approval.`);
+    }
+
+    current.status = "approved";
+    current.plan.approval = {
+      ...current.plan.approval,
+      status: "approved",
+      approvedBy,
+      approvedAt,
+      note,
+    };
+    current.plan.planReport = current.plan.planReport
+      ? {
+          ...current.plan.planReport,
+          approval: current.plan.approval,
+        }
+      : current.plan.planReport;
+    current.plan.plan_report = current.plan.plan_report
+      ? {
+          ...current.plan.plan_report,
+          approval: current.plan.approval,
+        }
+      : current.plan.plan_report;
+    current.events.push({
+      type: "approval.approved",
+      timestamp: approvedAt,
+      approvedBy,
+      note,
+    });
+    return current;
+  });
+
+  return summarizeRecord(record);
+}
+
+function conflictError(message) {
+  const error = new Error(message);
+  error.statusCode = 409;
+  return error;
+}
+
 function summarizeRecord(record) {
   return {
     runId: record.runId,
@@ -209,6 +281,7 @@ function summarizeRecord(record) {
     request: record.request,
     taskCount: record.plan.tasks.length,
     eventCount: record.events.length,
+    approvalStatus: record.plan.approval?.status ?? "unknown",
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };

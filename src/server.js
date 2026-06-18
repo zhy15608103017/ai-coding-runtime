@@ -58,6 +58,17 @@ export function createRuntimeHttpServer({ store = new FileExecutionStore(), apiT
         return sendJson(response, 200, canceled);
       }
 
+      const approveMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/approve$/);
+      if (request.method === "POST" && approveMatch) {
+        const body = await readJsonBody(request);
+        const approved = await callRuntimeTool(
+          "runtime_approve",
+          { runId: approveMatch[1], approvedBy: body.approvedBy, note: body.note },
+          { store }
+        );
+        return sendJson(response, 200, approved);
+      }
+
       if (request.method === "POST" && url.pathname === "/api/verify") {
         const body = await readJsonBody(request);
         const verification = await callRuntimeTool("runtime_verify", body, { store });
@@ -101,7 +112,7 @@ export function createRuntimeHttpServer({ store = new FileExecutionStore(), apiT
         message: `${request.method} ${url.pathname} is not implemented.`,
       });
     } catch (error) {
-      return sendJson(response, 500, {
+      return sendJson(response, error.statusCode ?? 500, {
         error: "runtime_error",
         message: error.message,
       });
@@ -140,6 +151,7 @@ export function summarizeRecord(record) {
     request: record.request,
     taskCount: record.plan.tasks.length,
     eventCount: record.events.length,
+    approvalStatus: record.plan.approval?.status ?? "unknown",
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };

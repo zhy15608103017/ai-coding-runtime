@@ -22,6 +22,10 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     assert.equal(estimate.request, "为支付模块生成计划");
     assert.equal(estimate.modelTiers.length, 3);
     assert.ok(estimate.tasks.length >= 5);
+    assert.equal(estimate.approval.status, "required");
+    assert.equal(estimate.validation.valid, true);
+    assert.equal(estimate.planReport.approval.status, "required");
+    assert.match(estimate.planningPrompt, /Task Contract/);
 
     const runResponse = await postJson(`${started.httpUrl}/api/runs`, {
       request: "为支付模块生成计划",
@@ -38,6 +42,15 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     assert.equal(verification.status, "skipped");
     assert.match(verification.message, /V0/);
 
+    const approveResponse = await postJson(`${started.httpUrl}/api/runs/${run.runId}/approve`, {
+      approvedBy: "gateway-test",
+      note: "approved through HTTP",
+    });
+    assert.equal(approveResponse.status, 200);
+    const approved = await approveResponse.json();
+    assert.equal(approved.status, "approved");
+    assert.equal(approved.approvalStatus, "approved");
+
     const cancelResponse = await postJson(`${started.httpUrl}/api/runs/${run.runId}/cancel`, {
       reason: "test cleanup",
     });
@@ -45,11 +58,22 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     const canceled = await cancelResponse.json();
     assert.equal(canceled.status, "canceled");
 
+    const approveCanceledResponse = await postJson(`${started.httpUrl}/api/runs/${run.runId}/approve`, {
+      approvedBy: "gateway-test",
+      note: "should fail after cancel",
+    });
+    assert.equal(approveCanceledResponse.status, 409);
+    const approveCanceled = await approveCanceledResponse.json();
+    assert.match(approveCanceled.message, /approval_required/);
+
     const reportResponse = await fetch(`${started.httpUrl}/api/runs/${run.runId}/report`);
     assert.equal(reportResponse.status, 200);
     const report = await reportResponse.json();
     assert.equal(report.runId, run.runId);
     assert.equal(report.status, "canceled");
+    assert.equal(report.approval.status, "approved");
+    assert.equal(report.validation.valid, true);
+    assert.match(report.planningPrompt, /Task Contract/);
   } finally {
     server.close();
     await rm(workspace, { recursive: true, force: true });
@@ -95,6 +119,7 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
       "runtime_verify",
       "runtime_report",
       "runtime_cancel",
+      "runtime_approve",
     ]);
 
     const call = await postJson(`${started.httpUrl}/mcp`, {
@@ -111,7 +136,7 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
     assert.equal(call.status, 200);
     const called = await call.json();
     assert.match(called.result.structuredContent.runId, /^run_/);
-    assert.equal(called.result.structuredContent.status, "planned");
+    assert.equal(called.result.structuredContent.status, "approval_required");
     assert.equal(called.result.content[0].type, "text");
   } finally {
     server.close();

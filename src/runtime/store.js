@@ -1,6 +1,8 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { validateRuntimePlan } from "./contracts.js";
+
 export class FileExecutionStore {
   constructor({ workspace = defaultRuntimeHome() } = {}) {
     this.workspace = resolve(workspace);
@@ -8,20 +10,57 @@ export class FileExecutionStore {
   }
 
   async createRecord(plan, { now = new Date() } = {}) {
+    const validation = validateRuntimePlan(plan);
+    if (!validation.valid) {
+      const error = new Error(
+        `Invalid runtime plan: ${validation.errors.map((item) => item.code).join(", ")}`
+      );
+      error.validation = validation;
+      throw error;
+    }
+
+    const expectedApprovalStatus = plan.approval.required ? "required" : "not_required";
+    if (plan.approval.status !== expectedApprovalStatus) {
+      const error = new Error("Invalid runtime plan: approval.status.inconsistent");
+      error.validation = {
+        valid: false,
+        errors: [
+          {
+            code: "approval.status.inconsistent",
+            field: "approval.status",
+            message: "New runtime plans must start in their initial approval status.",
+          },
+        ],
+      };
+      throw error;
+    }
+
     const runId = createRunId(now);
+    const status = plan.approval.required ? "approval_required" : "planned";
+    const storedPlan = applyRunIdToPlan({ ...plan, validation }, runId);
     const record = {
       runId,
-      status: "planned",
+      status,
       request: plan.request,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
-      plan,
+      plan: storedPlan,
       events: [
         {
           type: "run.created",
           timestamp: now.toISOString(),
           message: "Runtime run record created.",
         },
+        ...(status === "approval_required"
+          ? [
+              {
+                type: "approval.required",
+                timestamp: now.toISOString(),
+                message: "Human approval is required before execution.",
+                reasons: plan.approval.reasons,
+              },
+            ]
+          : []),
       ],
       verification: [],
       report: null,
@@ -75,6 +114,36 @@ export class FileExecutionStore {
   }
 }
 
+function applyRunIdToPlan(plan, runId) {
+  if (!plan.taskGraph) {
+    return plan;
+  }
+
+  const taskGraph = {
+    ...plan.taskGraph,
+    run_id: runId,
+  };
+  const planReport = plan.planReport
+    ? {
+        ...plan.planReport,
+        taskGraph,
+        task_graph: taskGraph,
+      }
+    : undefined;
+
+  return {
+    ...plan,
+    taskGraph,
+    task_graph: taskGraph,
+    ...(planReport
+      ? {
+          planReport,
+          plan_report: planReport,
+        }
+      : {}),
+  };
+}
+
 function defaultRuntimeHome() {
   return process.env.AI_CODING_RUNTIME_HOME ?? join(process.cwd(), ".ai-coding-runtime");
 }
@@ -84,4 +153,3 @@ function createRunId(now) {
   const random = Math.random().toString(36).slice(2, 8);
   return `run_${timestamp}_${random}`;
 }
-

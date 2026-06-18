@@ -18,6 +18,11 @@ export function createReport(record) {
       risk: task.risk,
       difficulty: task.difficulty,
     })),
+    taskGraphSchema: record.plan.taskGraph,
+    approval: record.plan.approval,
+    validation: record.plan.validation,
+    planReport: record.plan.planReport,
+    planningPrompt: record.plan.planningPrompt,
     modelRouting: tierCounts,
     estimatedCost: record.plan.estimatedCost,
     verification: record.verification,
@@ -41,6 +46,10 @@ export function formatReportMarkdown(report) {
     `## Model Routing`,
     ...Object.entries(report.modelRouting).map(([tier, count]) => `- ${tier}: ${count}`),
     ``,
+    `## Approval`,
+    `- status: ${report.approval?.status ?? "unknown"}`,
+    `- required: ${report.approval?.required ?? false}`,
+    ``,
     `## Task Graph`,
     ...report.taskGraph.map(
       (task) =>
@@ -55,4 +64,3 @@ export function formatReportMarkdown(report) {
 
   return `${lines.join("\n")}\n`;
 }
-

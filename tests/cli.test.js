@@ -16,7 +16,7 @@ test("run, status, and report commands use the same file-backed run", async () =
 
     const runOutput = JSON.parse(runResult.stdout);
     assert.match(runOutput.runId, /^run_/);
-    assert.equal(runOutput.status, "planned");
+    assert.equal(runOutput.status, "approval_required");
     assert.ok(runOutput.plan.tasks.length >= 5);
 
     const statusResult = runCli(["status", runOutput.runId, "--json"], workspace);
@@ -24,8 +24,14 @@ test("run, status, and report commands use the same file-backed run", async () =
 
     const statusOutput = JSON.parse(statusResult.stdout);
     assert.equal(statusOutput.runId, runOutput.runId);
-    assert.equal(statusOutput.status, "planned");
+    assert.equal(statusOutput.status, "approval_required");
     assert.equal(statusOutput.taskCount, runOutput.plan.tasks.length);
+
+    const approveResult = runCli(["approve", runOutput.runId, "--json"], workspace);
+    assert.equal(approveResult.status, 0, approveResult.stderr);
+    const approveOutput = JSON.parse(approveResult.stdout);
+    assert.equal(approveOutput.runId, runOutput.runId);
+    assert.equal(approveOutput.status, "approved");
 
     const reportResult = runCli(["report", runOutput.runId, "--markdown"], workspace);
     assert.equal(reportResult.status, 0, reportResult.stderr);

@@ -6,6 +6,8 @@ AI Coding Runtime exposes two integration surfaces in Phase 2:
 - Streamable HTTP JSON-RPC: `POST http://127.0.0.1:3847/mcp`
 
 The HTTP service also exposes REST-style endpoints for scripts and smoke tests.
+Phase 3 responses include task contract validation metadata and a deterministic planning prompt. If a plan contains medium or high risk tasks, `runtime_run` creates a run with status `approval_required`; `runtime_approve` records human approval and moves the run to `approved`.
+Explicit read-only planning prompts such as `plan only`, `read-only`, or `不修改文件` produce low-risk task contracts and can be persisted with status `planned`.
 
 ## Runtime Tools
 
@@ -19,6 +21,10 @@ MCP tools:
 - `runtime_verify`
 - `runtime_report`
 - `runtime_cancel`
+- `runtime_approve`
+
+`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, and `planReport`. `planReport` is the Phase 3 plan review output for host tools to show before execution.
+For read-only planning, include wording such as `plan only` or `不修改文件` when you want a low-risk plan that does not require approval.
 
 ## Codex CLI
 
@@ -38,6 +44,7 @@ Then prompt Codex:
 
 ```text
 Use ai-coding-runtime to plan this task first. Show risk, routing, and estimated cost before execution.
+If the Runtime returns approval_required, show me the task contracts and wait for my approval.
 ```
 
 ## Codex Desktop
@@ -58,6 +65,7 @@ Recommended prompt:
 
 ```text
 Use AI Coding Runtime for this task. Plan first, estimate cost and risk, then wait for approval.
+If approval is required, do not execute worker tasks yet.
 ```
 
 ## Cursor
@@ -134,14 +142,16 @@ Endpoints:
 - `POST /api/estimate`
 - `POST /api/runs`
 - `GET /api/runs/:id`
+- `POST /api/runs/:id/approve`
 - `POST /api/runs/:id/cancel`
 - `POST /api/verify`
 - `GET /api/runs/:id/report`
 - `POST /mcp`
+
+Plan and estimate responses include task graph, approval, validation, planning prompt, and plan report metadata.
 
 If `server.apiToken` or `AI_CODING_RUNTIME_API_TOKEN` is set, every endpoint except `/api/health` requires:
 
 ```text
 Authorization: Bearer <token>
 ```
-

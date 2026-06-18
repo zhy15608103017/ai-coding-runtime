@@ -1,4 +1,5 @@
 import {
+  callRuntimeTool,
   createReport,
   createRuntimePlan,
   FileExecutionStore,
@@ -19,6 +20,8 @@ export async function runCli(argv, io = process) {
         return await statusCommand(rest, io);
       case "report":
         return await reportCommand(rest, io);
+      case "approve":
+        return await approveCommand(rest, io);
       case "start":
         return await startCommand(rest, io);
       case "mcp":
@@ -110,6 +113,31 @@ async function reportCommand(args, io) {
   return 0;
 }
 
+async function approveCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const [runId] = positional;
+
+  if (!runId) {
+    throw new Error("approve requires a run id.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const approved = await callRuntimeTool(
+    "runtime_approve",
+    { runId, approvedBy: "cli", note: "approved through CLI" },
+    { store }
+  );
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify(approved, null, 2)}\n`);
+  } else {
+    io.stdout.write(`${approved.runId}: ${approved.status}\n`);
+  }
+
+  return 0;
+}
+
 async function startCommand(args, io) {
   const { options } = parseArgs(args);
   const config = await loadRuntimeConfig();
@@ -188,6 +216,7 @@ Usage:
   ai-coding-runtime mcp
   ai-coding-runtime run "<request>" [--json]
   ai-coding-runtime status <run-id> [--json]
+  ai-coding-runtime approve <run-id> [--json]
   ai-coding-runtime report <run-id> [--json|--markdown]
 `;
 }
