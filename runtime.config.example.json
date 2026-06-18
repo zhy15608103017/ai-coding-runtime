@@ -2,7 +2,8 @@
   "server": {
     "host": "127.0.0.1",
     "httpPort": 3847,
-    "mcpPath": "/mcp"
+    "mcpPath": "/mcp",
+    "apiToken": null
   },
   "storage": {
     "directory": ".ai-coding-runtime"

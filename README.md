@@ -20,6 +20,7 @@ node ./bin/ai-coding-runtime.js run "实现登录限流并补充测试" --json
 node ./bin/ai-coding-runtime.js status <run-id> --json
 node ./bin/ai-coding-runtime.js report <run-id> --markdown
 node ./bin/ai-coding-runtime.js start --host 127.0.0.1 --port 3847
+node ./bin/ai-coding-runtime.js mcp
 ```
 
 By default, run data is stored in `.ai-coding-runtime/runs`.
@@ -40,7 +41,8 @@ Copy `runtime.config.example.json` to `runtime.config.json` and adjust it:
   "server": {
     "host": "127.0.0.1",
     "httpPort": 3847,
-    "mcpPath": "/mcp"
+    "mcpPath": "/mcp",
+    "apiToken": null
   },
   "storage": {
     "directory": ".ai-coding-runtime"
@@ -60,6 +62,7 @@ Environment variables can override local config:
 - `AI_CODING_RUNTIME_HOME`
 - `AI_CODING_RUNTIME_HOST`
 - `AI_CODING_RUNTIME_PORT`
+- `AI_CODING_RUNTIME_API_TOKEN`
 
 ## HTTP
 
@@ -73,8 +76,12 @@ V0 endpoints:
 
 - `GET /api/health`
 - `POST /api/plan`
+- `POST /api/estimate`
 - `POST /api/runs`
 - `GET /api/runs/:id`
+- `POST /api/runs/:id/cancel`
+- `POST /api/verify`
 - `GET /api/runs/:id/report`
-- `GET /mcp` placeholder endpoint for Phase 2
+- `POST /mcp`
 
+See `docs/integrations.md` for Codex, Cursor, and OpenCode setup examples.

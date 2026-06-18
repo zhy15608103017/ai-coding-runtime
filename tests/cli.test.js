@@ -69,6 +69,67 @@ test("start command launches a local HTTP health endpoint", async () => {
   }
 });
 
+test("mcp command serves runtime tools over stdio JSON-RPC", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-mcp-cli-"));
+  const child = spawn(process.execPath, [cliPath, "mcp"], {
+    cwd: path.resolve("."),
+    env: {
+      ...process.env,
+      AI_CODING_RUNTIME_HOME: workspace,
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  try {
+    child.stdin.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "cli-test", version: "0.0.0" },
+        },
+      })}\n`
+    );
+    const initialized = JSON.parse(await readFirstStdoutLine(child));
+    assert.equal(initialized.id, 1);
+    assert.equal(initialized.result.protocolVersion, "2025-06-18");
+
+    child.stdin.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+      })}\n`
+    );
+    const listed = JSON.parse(await readFirstStdoutLine(child));
+    assert.equal(listed.id, 2);
+    assert.ok(listed.result.tools.some((tool) => tool.name === "runtime_plan"));
+
+    child.stdin.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "runtime_plan",
+          arguments: {
+            request: "stdio mcp plan",
+          },
+        },
+      })}\n`
+    );
+    const called = JSON.parse(await readFirstStdoutLine(child));
+    assert.equal(called.id, 3);
+    assert.match(called.result.structuredContent.planId, /^plan_/);
+  } finally {
+    child.kill("SIGTERM");
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 function runCli(args, workspace) {
   return spawnSync(process.execPath, [cliPath, ...args], {
     cwd: path.resolve("."),
@@ -114,4 +175,3 @@ function readFirstStdoutLine(child) {
     });
   });
 }
-

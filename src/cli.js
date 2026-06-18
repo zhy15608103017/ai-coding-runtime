@@ -5,6 +5,7 @@ import {
   formatReportMarkdown,
   loadRuntimeConfig,
 } from "./index.js";
+import { startMcpStdioServer } from "./mcp.js";
 import { createRuntimeHttpServer, listen, summarizeRecord } from "./server.js";
 
 export async function runCli(argv, io = process) {
@@ -20,6 +21,8 @@ export async function runCli(argv, io = process) {
         return await reportCommand(rest, io);
       case "start":
         return await startCommand(rest, io);
+      case "mcp":
+        return await mcpCommand(io);
       case "help":
       case "--help":
       case "-h":
@@ -113,7 +116,7 @@ async function startCommand(args, io) {
   const host = options.host ?? config.server.host;
   const port = options.port === undefined ? config.server.httpPort : Number(options.port);
   const store = new FileExecutionStore({ workspace: config.storage.directory });
-  const server = createRuntimeHttpServer({ store });
+  const server = createRuntimeHttpServer({ store, apiToken: config.server.apiToken });
   const started = await listen(server, { host, port });
   const output = {
     status: "started",
@@ -127,6 +130,17 @@ async function startCommand(args, io) {
   }
 
   await waitForShutdown(server, io);
+  return 0;
+}
+
+async function mcpCommand(io) {
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  await startMcpStdioServer({
+    input: io.stdin,
+    output: io.stdout,
+    store,
+  });
   return 0;
 }
 
@@ -171,6 +185,7 @@ function helpText() {
 
 Usage:
   ai-coding-runtime start [--host 127.0.0.1] [--port 3847] [--json]
+  ai-coding-runtime mcp
   ai-coding-runtime run "<request>" [--json]
   ai-coding-runtime status <run-id> [--json]
   ai-coding-runtime report <run-id> [--json|--markdown]

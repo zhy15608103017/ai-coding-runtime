@@ -1,8 +1,10 @@
 import { createServer } from "node:http";
 
-import { createReport, createRuntimePlan, FileExecutionStore, formatReportMarkdown } from "./index.js";
+import { createReport, FileExecutionStore, formatReportMarkdown } from "./index.js";
+import { handleMcpJsonRpc } from "./mcp.js";
+import { callRuntimeTool } from "./runtime/tools.js";
 
-export function createRuntimeHttpServer({ store = new FileExecutionStore() } = {}) {
+export function createRuntimeHttpServer({ store = new FileExecutionStore(), apiToken = null } = {}) {
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://127.0.0.1");
@@ -14,27 +16,52 @@ export function createRuntimeHttpServer({ store = new FileExecutionStore() } = {
         });
       }
 
+      if (!isAuthorized(request, apiToken)) {
+        return sendJson(response, 401, {
+          error: "unauthorized",
+          message: "Authorization bearer token is required.",
+        });
+      }
+
       if (request.method === "POST" && url.pathname === "/api/plan") {
         const body = await readJsonBody(request);
-        const plan = createRuntimePlan({ request: body.request });
+        const plan = await callRuntimeTool("runtime_plan", body, { store });
         return sendJson(response, 200, plan);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/estimate") {
+        const body = await readJsonBody(request);
+        const estimate = await callRuntimeTool("runtime_estimate", body, { store });
+        return sendJson(response, 200, estimate);
       }
 
       if (request.method === "POST" && url.pathname === "/api/runs") {
         const body = await readJsonBody(request);
-        const plan = createRuntimePlan({ request: body.request });
-        const record = await store.createRecord(plan);
-        return sendJson(response, 201, {
-          runId: record.runId,
-          status: record.status,
-          plan: record.plan,
-        });
+        const record = await callRuntimeTool("runtime_run", body, { store });
+        return sendJson(response, 201, record);
       }
 
       const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
       if (request.method === "GET" && runMatch) {
         const record = await store.readRecord(runMatch[1]);
         return sendJson(response, 200, summarizeRecord(record));
+      }
+
+      const cancelMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/cancel$/);
+      if (request.method === "POST" && cancelMatch) {
+        const body = await readJsonBody(request);
+        const canceled = await callRuntimeTool(
+          "runtime_cancel",
+          { runId: cancelMatch[1], reason: body.reason },
+          { store }
+        );
+        return sendJson(response, 200, canceled);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/verify") {
+        const body = await readJsonBody(request);
+        const verification = await callRuntimeTool("runtime_verify", body, { store });
+        return sendJson(response, 200, verification);
       }
 
       const reportMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/report$/);
@@ -49,11 +76,23 @@ export function createRuntimeHttpServer({ store = new FileExecutionStore() } = {
         return sendJson(response, 200, report);
       }
 
+      if (request.method === "POST" && url.pathname === "/mcp") {
+        const body = await readJsonBody(request);
+        const mcpResponse = await handleMcpJsonRpc(body, { store });
+
+        if (!mcpResponse) {
+          response.writeHead(202);
+          response.end();
+          return undefined;
+        }
+
+        return sendJson(response, 200, mcpResponse);
+      }
+
       if (request.method === "GET" && url.pathname === "/mcp") {
-        return sendJson(response, 200, {
-          service: "ai-coding-runtime",
-          status: "placeholder",
-          note: "V0 exposes HTTP health and run APIs. Full MCP tools are planned for Phase 2.",
+        return sendJson(response, 405, {
+          error: "method_not_allowed",
+          message: "Use POST /mcp for Streamable HTTP JSON-RPC requests.",
         });
       }
 
@@ -68,6 +107,14 @@ export function createRuntimeHttpServer({ store = new FileExecutionStore() } = {
       });
     }
   });
+}
+
+function isAuthorized(request, apiToken) {
+  if (!apiToken) {
+    return true;
+  }
+
+  return request.headers.authorization === `Bearer ${apiToken}`;
 }
 
 export function listen(server, { host = "127.0.0.1", port = 3847 } = {}) {
@@ -121,4 +168,3 @@ async function readJsonBody(request) {
 
   return JSON.parse(rawBody);
 }
-

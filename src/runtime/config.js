@@ -6,6 +6,7 @@ export const DEFAULT_RUNTIME_CONFIG = {
     host: "127.0.0.1",
     httpPort: 3847,
     mcpPath: "/mcp",
+    apiToken: null,
   },
   storage: {
     directory: ".ai-coding-runtime",
@@ -33,6 +34,10 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
 
   if (env.AI_CODING_RUNTIME_PORT) {
     merged.server.httpPort = Number(env.AI_CODING_RUNTIME_PORT);
+  }
+
+  if (env.AI_CODING_RUNTIME_API_TOKEN) {
+    merged.server.apiToken = env.AI_CODING_RUNTIME_API_TOKEN;
   }
 
   return merged;
@@ -68,4 +73,3 @@ function deepMerge(base, override) {
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ai_runtime": {
+      "type": "local",
+      "command": ["node", "./bin/ai-coding-runtime.js", "mcp"],
+      "enabled": true
+    }
+  },
+  "command": {
+    "runtime": {
+      "template": "Use ai_runtime to plan, route, execute, verify, and summarize this task: $ARGUMENTS",
+      "description": "Run task through AI Coding Runtime"
+    }
+  }
+}
+
