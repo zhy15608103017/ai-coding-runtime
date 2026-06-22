@@ -37,14 +37,12 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     assert.equal(runResponse.status, 201);
     const run = await runResponse.json();
 
-    const verifyResponse = await postJson(`${started.httpUrl}/api/verify`, {
+    const verifyBeforeApprovalResponse = await postJson(`${started.httpUrl}/api/verify`, {
       runId: run.runId,
     });
-    assert.equal(verifyResponse.status, 200);
-    const verification = await verifyResponse.json();
-    assert.equal(verification.runId, run.runId);
-    assert.equal(verification.status, "skipped");
-    assert.match(verification.message, /V0/);
+    assert.equal(verifyBeforeApprovalResponse.status, 409);
+    const verifyBeforeApproval = await verifyBeforeApprovalResponse.json();
+    assert.match(verifyBeforeApproval.message, /approval_required/);
 
     const approveResponse = await postJson(`${started.httpUrl}/api/runs/${run.runId}/approve`, {
       approvedBy: "gateway-test",
@@ -54,6 +52,15 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     const approved = await approveResponse.json();
     assert.equal(approved.status, "approved");
     assert.equal(approved.approvalStatus, "approved");
+
+    const verifyResponse = await postJson(`${started.httpUrl}/api/verify`, {
+      runId: run.runId,
+    });
+    assert.equal(verifyResponse.status, 200);
+    const verification = await verifyResponse.json();
+    assert.equal(verification.runId, run.runId);
+    assert.equal(verification.status, "skipped");
+    assert.match(verification.message, /No verification commands configured/);
 
     const cancelResponse = await postJson(`${started.httpUrl}/api/runs/${run.runId}/cancel`, {
       reason: "test cleanup",
@@ -81,6 +88,53 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     assert.equal(report.budgetStatus.allowed, true);
     assert.equal(report.routingTrace.length, report.taskGraph.length);
     assert.equal(report.modelRegistry.length, 3);
+  } finally {
+    server.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("HTTP gateway passes verification runtime options to runtime_verify", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-http-verify-"));
+  const store = new FileExecutionStore({ workspace });
+  const server = createRuntimeHttpServer({
+    store,
+    runtimeOptions: {
+      verification: {
+        commands: [
+          {
+            name: "node-version",
+            command: process.execPath,
+            args: ["--version"],
+            required: true,
+            timeoutMs: 10000,
+          },
+        ],
+      },
+    },
+  });
+  const started = await listen(server, { host: "127.0.0.1", port: 0 });
+
+  try {
+    const runResponse = await postJson(`${started.httpUrl}/api/runs`, {
+      request: "plan only: verify through HTTP without modifying files",
+    });
+    assert.equal(runResponse.status, 201);
+    const run = await runResponse.json();
+    assert.equal(run.status, "planned");
+
+    const verifyResponse = await postJson(`${started.httpUrl}/api/verify`, {
+      runId: run.runId,
+    });
+    assert.equal(verifyResponse.status, 200);
+    const verification = await verifyResponse.json();
+    assert.equal(verification.status, "passed");
+    assert.equal(verification.commands.length, 1);
+    assert.equal(verification.commands[0].name, "node-version");
+    assert.equal(verification.commands[0].exitCode, 0);
+
+    const record = await store.readRecord(run.runId);
+    assert.equal(record.status, "verification_passed");
   } finally {
     server.close();
     await rm(workspace, { recursive: true, force: true });

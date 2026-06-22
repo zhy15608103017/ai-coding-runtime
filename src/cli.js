@@ -18,6 +18,8 @@ export async function runCli(argv, io = process) {
         return await runCommand(rest, io);
       case "status":
         return await statusCommand(rest, io);
+      case "verify":
+        return await verifyCommand(rest, io);
       case "report":
         return await reportCommand(rest, io);
       case "approve":
@@ -93,6 +95,31 @@ async function statusCommand(args, io) {
   }
 
   return 0;
+}
+
+async function verifyCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const [runId] = positional;
+
+  if (!runId) {
+    throw new Error("verify requires a run id.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const verification = await callRuntimeTool(
+    "runtime_verify",
+    { runId },
+    { store, runtimeOptions: runtimeOptionsFromConfig(config) }
+  );
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify(verification, null, 2)}\n`);
+  } else {
+    io.stdout.write(`${verification.runId}: verification ${verification.status}\n`);
+  }
+
+  return verification.status === "failed" ? 1 : 0;
 }
 
 async function reportCommand(args, io) {
@@ -246,6 +273,7 @@ function runtimeOptionsFromConfig(config) {
     escalationPolicy: config.routing.escalationPolicy,
     policyViolations: config.routing.policyViolations,
     providers: config.providers,
+    verification: config.verification,
   };
 }
 
@@ -311,6 +339,7 @@ Usage:
   ai-coding-runtime mcp
   ai-coding-runtime run "<request>" [--json]
   ai-coding-runtime status <run-id> [--json]
+  ai-coding-runtime verify <run-id> [--json]
   ai-coding-runtime approve <run-id> [--json]
   ai-coding-runtime report <run-id> [--json|--markdown]
   ai-coding-runtime provider-health [provider] [--json]

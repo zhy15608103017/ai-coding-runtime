@@ -7,6 +7,7 @@ AI Coding Runtime exposes two integration surfaces in Phase 2:
 
 The HTTP service also exposes REST-style endpoints for scripts and smoke tests.
 Phase 5 adds provider adapters for OpenAI-compatible, Anthropic, Gemini, and local placeholder models. `runtime_model_generate` can append usage and estimated cost to a run trace when called with `runId`.
+The runtime can also execute configured deterministic verification commands and persist command output, exit code, duration, and pass/fail status before worker execution exists.
 Phase 3 responses include task contract validation metadata and a deterministic planning prompt. If a plan contains medium or high risk tasks, `runtime_run` creates a run with status `approval_required`; `runtime_approve` records human approval and moves the run to `approved`.
 Phase 4 responses add classifier, model registry, routing policy, budget policy, escalation policy, budget status, policy status, and routing trace metadata. If `budgetStatus.allowed` or `policyStatus.allowed` is `false`, `runtime_run` refuses persisted execution with a policy error.
 Explicit read-only planning prompts such as `plan only`, `read-only`, or `不修改文件` produce low-risk task contracts and can be persisted with status `planned`.
@@ -29,6 +30,7 @@ MCP tools:
 
 `runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution.
 Use `runtime_provider_health` before real generation to confirm local API key and model configuration. Use `runtime_model_generate` only when the host tool intentionally wants Runtime to call a configured provider directly.
+Use `runtime_verify` for runs in `planned`, `approved`, or `verification_failed`. Runs in `approval_required` should be approved first, then verified.
 For read-only planning, include wording such as `plan only` or `不修改文件` when you want a low-risk plan that does not require approval.
 
 ## Codex CLI
@@ -156,6 +158,7 @@ Endpoints:
 - `POST /mcp`
 
 Plan and estimate responses include task graph, approval, validation, planning prompt, plan report, model registry, routing policy, budget policy, budget status, policy status, escalation policy, and routing trace metadata.
+`POST /api/verify` accepts `{ "runId": "..." }` and returns `skipped`, `passed`, or `failed` with structured command evidence. Persisted run status becomes `verification_skipped`, `verification_passed`, or `verification_failed`.
 
 If `server.apiToken` or `AI_CODING_RUNTIME_API_TOKEN` is set, every endpoint except `/api/health` requires:
 

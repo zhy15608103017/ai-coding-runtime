@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -26,6 +26,10 @@ test("run, status, and report commands use the same file-backed run", async () =
     assert.equal(statusOutput.runId, runOutput.runId);
     assert.equal(statusOutput.status, "approval_required");
     assert.equal(statusOutput.taskCount, runOutput.plan.tasks.length);
+
+    const verifyBeforeApprovalResult = runCli(["verify", runOutput.runId, "--json"], workspace);
+    assert.equal(verifyBeforeApprovalResult.status, 1);
+    assert.match(verifyBeforeApprovalResult.stderr, /approval_required/);
 
     const approveResult = runCli(["approve", runOutput.runId, "--json"], workspace);
     assert.equal(approveResult.status, 0, approveResult.stderr);
@@ -161,9 +165,102 @@ test("provider-health and generate commands use provider adapters", async () => 
   }
 });
 
-function runCli(args, workspace) {
+test("verify command runs configured verification commands", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-cli-verify-"));
+
+  try {
+    await writeFile(
+      path.join(workspace, "runtime.config.json"),
+      JSON.stringify(
+        {
+          verification: {
+            commands: [
+              {
+                name: "node-version",
+                command: process.execPath,
+                args: ["--version"],
+                required: true,
+                timeoutMs: 10000,
+              },
+            ],
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const runResult = runCli(
+      ["run", "plan only: verify from cli without modifying files", "--json"],
+      workspace,
+      workspace
+    );
+    assert.equal(runResult.status, 0, runResult.stderr);
+    const runOutput = JSON.parse(runResult.stdout);
+    assert.equal(runOutput.status, "planned");
+
+    const verifyResult = runCli(["verify", runOutput.runId, "--json"], workspace, workspace);
+    assert.equal(verifyResult.status, 0, verifyResult.stderr);
+    const verification = JSON.parse(verifyResult.stdout);
+    assert.equal(verification.status, "passed");
+    assert.equal(verification.commands.length, 1);
+    assert.equal(verification.commands[0].name, "node-version");
+    assert.equal(verification.commands[0].exitCode, 0);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("verify command exits nonzero when a required verification command fails", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-cli-verify-fail-"));
+
+  try {
+    await writeFile(
+      path.join(workspace, "runtime.config.json"),
+      JSON.stringify(
+        {
+          verification: {
+            commands: [
+              {
+                name: "failing-required-command",
+                command: process.execPath,
+                args: ["-e", "process.exit(42)"],
+                required: true,
+                timeoutMs: 10000,
+              },
+            ],
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const runResult = runCli(
+      ["run", "plan only: verify failure exit code from cli", "--json"],
+      workspace,
+      workspace
+    );
+    assert.equal(runResult.status, 0, runResult.stderr);
+    const runOutput = JSON.parse(runResult.stdout);
+    assert.equal(runOutput.status, "planned");
+
+    const verifyResult = runCli(["verify", runOutput.runId, "--json"], workspace, workspace);
+    assert.equal(verifyResult.status, 1, verifyResult.stderr);
+    const verification = JSON.parse(verifyResult.stdout);
+    assert.equal(verification.status, "failed");
+    assert.equal(verification.commands.length, 1);
+    assert.equal(verification.commands[0].name, "failing-required-command");
+    assert.equal(verification.commands[0].status, "failed");
+    assert.equal(verification.commands[0].exitCode, 42);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+function runCli(args, workspace, cwd = path.resolve(".")) {
   return spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: path.resolve("."),
+    cwd,
     env: {
       ...process.env,
       AI_CODING_RUNTIME_HOME: workspace,

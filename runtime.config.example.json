@@ -56,6 +56,14 @@
     }
   },
   "verification": {
-    "commands": []
+    "commands": [
+      {
+        "name": "node-tests",
+        "command": "node",
+        "args": ["--test"],
+        "required": true,
+        "timeoutMs": 120000
+      }
+    ]
   }
 }

@@ -75,7 +75,7 @@ export function createRuntimeHttpServer({
 
       if (request.method === "POST" && url.pathname === "/api/verify") {
         const body = await readJsonBody(request);
-        const verification = await callRuntimeTool("runtime_verify", body, { store });
+        const verification = await callRuntimeTool("runtime_verify", body, { store, runtimeOptions });
         return sendJson(response, 200, verification);
       }
 

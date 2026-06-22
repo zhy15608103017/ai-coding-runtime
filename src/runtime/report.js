@@ -108,10 +108,36 @@ export function formatReportMarkdown(report) {
     ),
     ``,
     `## Verification`,
-    report.verification.length === 0
-      ? "- skipped: V0 skeleton has not run verification commands yet."
-      : report.verification.map((item) => `- ${item.name}: ${item.status}`).join("\n"),
+    formatVerificationMarkdown(report.verification),
   ];
 
   return `${lines.join("\n")}\n`;
+}
+
+function formatVerificationMarkdown(verification) {
+  if (verification.length === 0) {
+    return "- skipped: no verification has been recorded.";
+  }
+
+  return verification
+    .flatMap((item) => {
+      const lines = [`- ${item.name}: ${item.status}`];
+
+      if (item.message) {
+        lines.push(`  - message: ${item.message}`);
+      }
+
+      for (const command of item.commands ?? []) {
+        const exitCode =
+          command.exitCode === null || command.exitCode === undefined
+            ? "none"
+            : command.exitCode;
+        lines.push(
+          `  - ${command.name}: ${command.status} (exitCode: ${exitCode}, required: ${command.required}, durationMs: ${command.durationMs})`
+        );
+      }
+
+      return lines;
+    })
+    .join("\n");
 }

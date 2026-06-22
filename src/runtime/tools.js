@@ -1,6 +1,8 @@
 import { createRuntimePlan } from "./planner.js";
 import { checkProviderHealth, generateModelResponse } from "./providers.js";
 import { createReport, formatReportMarkdown } from "./report.js";
+import { RUN_STATUS, canVerifyRun } from "./status.js";
+import { runVerificationCommands } from "./verification.js";
 
 export const RUNTIME_TOOLS = [
   {
@@ -104,7 +106,7 @@ export async function callRuntimeTool(name, args, { store, runtimeOptions = {} }
     case "runtime_collect":
       return collectRun(requireRunId(args), store);
     case "runtime_verify":
-      return verifyRun(requireRunId(args), store);
+      return verifyRun(requireRunId(args), store, runtimeOptions);
     case "runtime_report":
       return reportRun(requireRunId(args), args, store);
     case "runtime_cancel":
@@ -199,29 +201,74 @@ async function collectRun(runId, store) {
   };
 }
 
-async function verifyRun(runId, store) {
+async function verifyRun(runId, store, runtimeOptions = {}) {
+  const commands = runtimeOptions.verification?.commands ?? [];
+  const cwd = runtimeOptions.verification?.cwd ?? process.cwd();
+  const startedAt = new Date().toISOString();
+
+  await store.updateRecord(
+    runId,
+    (record) => {
+      if (!canVerifyRun(record.status)) {
+        throw conflictError(
+          `Run ${runId} cannot be verified from ${record.status} status.`
+        );
+      }
+
+      record.status = RUN_STATUS.verifying;
+      record.events.push({
+        type: "verification.started",
+        timestamp: startedAt,
+        commandCount: Array.isArray(commands) ? commands.length : 0,
+      });
+      return record;
+    },
+    { now: new Date(startedAt) }
+  );
+
+  const result = await runVerificationCommands({ commands, cwd });
   const verification = {
     runId,
-    status: "skipped",
-    message: "V0 records verification intent but does not execute verification commands yet.",
+    name: "verification",
+    ...result,
   };
+  const finishedAt = new Date(verification.finishedAt);
 
-  await store.updateRecord(runId, (record) => {
-    record.verification.push({
-      name: "v0-verification",
-      status: verification.status,
-      message: verification.message,
-    });
-    record.events.push({
-      type: "verification.finished",
-      timestamp: new Date().toISOString(),
-      status: verification.status,
-      message: verification.message,
-    });
-    return record;
-  });
+  await store.updateRecord(
+    runId,
+    (record) => {
+      const statusBeforeVerificationFinish = record.status;
+      if (record.status === RUN_STATUS.verifying) {
+        record.status = runStatusForVerification(verification.status);
+      }
+      record.verification.push(verification);
+      record.events.push({
+        type: "verification.finished",
+        timestamp: verification.finishedAt,
+        status: verification.status,
+        message: verification.message,
+        commandCount: verification.commands.length,
+        runStatusBeforeFinish: statusBeforeVerificationFinish,
+        runStatusAfterFinish: record.status,
+      });
+      return record;
+    },
+    { now: Number.isNaN(finishedAt.getTime()) ? undefined : finishedAt }
+  );
 
   return verification;
+}
+
+function runStatusForVerification(status) {
+  if (status === "passed") {
+    return RUN_STATUS.verificationPassed;
+  }
+
+  if (status === "failed") {
+    return RUN_STATUS.verificationFailed;
+  }
+
+  return RUN_STATUS.verificationSkipped;
 }
 
 async function reportRun(runId, args, store) {

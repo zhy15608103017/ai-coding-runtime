@@ -1,0 +1,171 @@
+import { spawn } from "node:child_process";
+
+export async function runVerificationCommands({ commands = [], cwd = process.cwd() } = {}) {
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
+  const normalizedCommands = Array.isArray(commands) ? commands : [];
+  const results = [];
+
+  for (const command of normalizedCommands) {
+    results.push(await runVerificationCommand(command, { cwd }));
+  }
+
+  const finishedAtMs = Date.now();
+  const failedRequired = results.some(
+    (result) => result.required && result.status !== "passed"
+  );
+  const status =
+    results.length === 0 ? "skipped" : failedRequired ? "failed" : "passed";
+
+  return {
+    status,
+    message: verificationMessage(status),
+    commands: results,
+    startedAt,
+    finishedAt: new Date(finishedAtMs).toISOString(),
+    durationMs: finishedAtMs - startedAtMs,
+  };
+}
+
+function runVerificationCommand(config = {}, { cwd }) {
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
+  const command = typeof config.command === "string" ? config.command : "";
+  const args = Array.isArray(config.args) ? config.args.map(String) : [];
+  const required = config.required !== false;
+  const timeoutMs = Number.isFinite(config.timeoutMs) ? config.timeoutMs : undefined;
+  const baseResult = {
+    name: config.name ?? command,
+    command,
+    args,
+    required,
+    status: "failed",
+    exitCode: null,
+    signal: null,
+    stdout: "",
+    stderr: "",
+    startedAt,
+    finishedAt: null,
+    durationMs: 0,
+  };
+
+  if (!command) {
+    return Promise.resolve(
+      finishCommand(baseResult, startedAtMs, {
+        error: {
+          code: "verification.command.required",
+          message: "Verification command is required.",
+        },
+      })
+    );
+  }
+
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let spawnError = null;
+    let settled = false;
+    let timeout = null;
+    let timeoutFallback = null;
+    const child = spawn(command, args, {
+      cwd,
+      shell: false,
+      windowsHide: true,
+    });
+
+    const resolveOnce = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(timeoutFallback);
+      resolve(result);
+    };
+
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timeout = setTimeout(() => {
+        timedOut = true;
+        child.kill();
+        timeoutFallback = setTimeout(() => {
+          resolveOnce(
+            finishCommand(baseResult, startedAtMs, {
+              stdout,
+              stderr,
+              timedOut,
+              error: {
+                code: "verification.command.timeout",
+                message: `Verification command timed out after ${timeoutMs}ms.`,
+              },
+            })
+          );
+        }, 1000);
+      }, timeoutMs);
+    }
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      spawnError = {
+        code: error.code ?? "verification.command.error",
+        message: error.message,
+      };
+    });
+    child.on("close", (exitCode, signal) => {
+      resolveOnce(
+        finishCommand(baseResult, startedAtMs, {
+          exitCode,
+          signal,
+          stdout,
+          stderr,
+          timedOut,
+          error:
+            spawnError ??
+            (timedOut
+              ? {
+                  code: "verification.command.timeout",
+                  message: `Verification command timed out after ${timeoutMs}ms.`,
+                }
+              : undefined),
+        })
+      );
+    });
+  });
+}
+
+function finishCommand(baseResult, startedAtMs, updates = {}) {
+  const finishedAtMs = Date.now();
+  const exitCode =
+    updates.exitCode === undefined ? baseResult.exitCode : updates.exitCode;
+  const timedOut = updates.timedOut === true;
+  const status = !timedOut && exitCode === 0 ? "passed" : "failed";
+
+  return {
+    ...baseResult,
+    ...updates,
+    status,
+    exitCode,
+    timedOut,
+    finishedAt: new Date(finishedAtMs).toISOString(),
+    durationMs: finishedAtMs - startedAtMs,
+  };
+}
+
+function verificationMessage(status) {
+  if (status === "passed") {
+    return "Verification commands passed.";
+  }
+
+  if (status === "failed") {
+    return "Required verification command failed.";
+  }
+
+  return "No verification commands configured.";
+}

@@ -1390,6 +1390,289 @@ test("runtime_run persists approval gate metadata for medium and high risk plans
   }
 });
 
+test("runtime_verify records explicit lifecycle status transitions", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-status-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const run = await callRuntimeTool(
+      "runtime_run",
+      { request: "plan only: verify status transitions without modifying files" },
+      { store }
+    );
+    assert.equal(run.status, "planned");
+
+    const verification = await callRuntimeTool(
+      "runtime_verify",
+      { runId: run.runId },
+      {
+        store,
+        runtimeOptions: {
+          verification: {
+            commands: [],
+          },
+        },
+      }
+    );
+
+    assert.equal(verification.status, "skipped");
+    const record = await store.readRecord(run.runId);
+    assert.equal(record.status, "verification_skipped");
+    assert.ok(record.events.some((event) => event.type === "verification.started"));
+    assert.ok(record.events.some((event) => event.type === "verification.finished"));
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("runtime_verify refuses approval_required runs", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-approval-verify-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const run = await callRuntimeTool(
+      "runtime_run",
+      { request: "implement a payment module with tests" },
+      { store }
+    );
+    assert.equal(run.status, "approval_required");
+
+    await assert.rejects(
+      callRuntimeTool("runtime_verify", { runId: run.runId }, { store }),
+      /approval_required/
+    );
+
+    const record = await store.readRecord(run.runId);
+    assert.equal(record.status, "approval_required");
+    assert.equal(
+      record.events.some((event) => event.type === "verification.started"),
+      false
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("runtime_verify runs configured commands and records structured evidence", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-verify-pass-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const run = await callRuntimeTool(
+      "runtime_run",
+      { request: "plan only: run deterministic verification" },
+      { store }
+    );
+    const verification = await callRuntimeTool(
+      "runtime_verify",
+      { runId: run.runId },
+      {
+        store,
+        runtimeOptions: {
+          verification: {
+            commands: [
+              {
+                name: "node-version",
+                command: "node",
+                args: ["--version"],
+                required: true,
+                timeoutMs: 10000,
+              },
+            ],
+          },
+        },
+      }
+    );
+
+    assert.equal(verification.status, "passed");
+    assert.equal(verification.commands.length, 1);
+    assert.equal(verification.commands[0].status, "passed");
+    assert.equal(verification.commands[0].exitCode, 0);
+    assert.match(verification.commands[0].stdout, /^v/);
+
+    const record = await store.readRecord(run.runId);
+    assert.equal(record.status, "verification_passed");
+    assert.equal(record.verification[0].commands[0].name, "node-version");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("runtime_verify marks required command failures as verification_failed", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-verify-fail-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const run = await callRuntimeTool(
+      "runtime_run",
+      { request: "plan only: fail deterministic verification" },
+      { store }
+    );
+    const verification = await callRuntimeTool(
+      "runtime_verify",
+      { runId: run.runId },
+      {
+        store,
+        runtimeOptions: {
+          verification: {
+            commands: [
+              {
+                name: "failing-command",
+                command: "node",
+                args: ["-e", "console.error('intentional failure'); process.exit(3);"],
+                required: true,
+              },
+            ],
+          },
+        },
+      }
+    );
+
+    assert.equal(verification.status, "failed");
+    assert.equal(verification.commands[0].exitCode, 3);
+    assert.match(verification.commands[0].stderr, /intentional failure/);
+
+    const record = await store.readRecord(run.runId);
+    assert.equal(record.status, "verification_failed");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("runtime_verify does not overwrite a run canceled during verification", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-verify-cancel-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const run = await callRuntimeTool(
+      "runtime_run",
+      { request: "plan only: cancel while deterministic verification runs" },
+      { store }
+    );
+    const verificationPromise = callRuntimeTool(
+      "runtime_verify",
+      { runId: run.runId },
+      {
+        store,
+        runtimeOptions: {
+          verification: {
+            commands: [
+              {
+                name: "delayed-success",
+                command: process.execPath,
+                args: ["-e", "setTimeout(() => process.exit(0), 250);"],
+                required: true,
+              },
+            ],
+          },
+        },
+      }
+    );
+
+    await waitForRecordStatus(store, run.runId, "verifying");
+    const canceled = await callRuntimeTool(
+      "runtime_cancel",
+      { runId: run.runId, reason: "cancel during verification" },
+      { store }
+    );
+    assert.equal(canceled.status, "canceled");
+
+    await verificationPromise;
+
+    const record = await store.readRecord(run.runId);
+    assert.equal(record.status, "canceled");
+    assert.ok(record.events.some((event) => event.type === "run.canceled"));
+    assert.ok(record.events.some((event) => event.type === "verification.finished"));
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("runtime_verify records command spawn errors as verification_failed", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-verify-spawn-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const run = await callRuntimeTool(
+      "runtime_run",
+      { request: "plan only: record verification spawn errors" },
+      { store }
+    );
+    const verification = await callRuntimeTool(
+      "runtime_verify",
+      { runId: run.runId },
+      {
+        store,
+        runtimeOptions: {
+          verification: {
+            cwd: path.join(workspace, "missing-directory"),
+            commands: [
+              {
+                name: "bad-cwd",
+                command: process.execPath,
+                args: ["--version"],
+                required: true,
+              },
+            ],
+          },
+        },
+      }
+    );
+
+    assert.equal(verification.status, "failed");
+    assert.equal(verification.commands[0].status, "failed");
+    assert.ok(verification.commands[0].error);
+
+    const record = await store.readRecord(run.runId);
+    assert.equal(record.status, "verification_failed");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("runtime_report markdown includes verification command evidence", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-report-verify-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const run = await callRuntimeTool(
+      "runtime_run",
+      { request: "plan only: report deterministic verification evidence" },
+      { store }
+    );
+    await callRuntimeTool(
+      "runtime_verify",
+      { runId: run.runId },
+      {
+        store,
+        runtimeOptions: {
+          verification: {
+            commands: [
+              {
+                name: "node-version",
+                command: process.execPath,
+                args: ["--version"],
+                required: true,
+              },
+            ],
+          },
+        },
+      }
+    );
+
+    const report = await callRuntimeTool(
+      "runtime_report",
+      { runId: run.runId, format: "markdown" },
+      { store }
+    );
+
+    assert.match(report.markdown, /node-version: passed/);
+    assert.match(report.markdown, /exitCode: 0/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("loadRuntimeConfig merges defaults, config file, and environment overrides", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-config-"));
   const dataDirectory = path.join(workspace, "data");
@@ -1432,3 +1715,19 @@ test("loadRuntimeConfig merges defaults, config file, and environment overrides"
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+async function waitForRecordStatus(store, runId, status) {
+  const deadline = Date.now() + 1000;
+
+  while (Date.now() < deadline) {
+    const record = await store.readRecord(runId);
+    if (record.status === status) {
+      return record;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  const record = await store.readRecord(runId);
+  assert.equal(record.status, status);
+  return record;
+}
