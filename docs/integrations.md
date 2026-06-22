@@ -8,6 +8,7 @@ AI Coding Runtime exposes two integration surfaces in Phase 2:
 The HTTP service also exposes REST-style endpoints for scripts and smoke tests.
 Phase 5 adds provider adapters for OpenAI-compatible, Anthropic, Gemini, and local placeholder models. `runtime_model_generate` can append usage and estimated cost to a run trace when called with `runId`.
 The runtime can also accept structured worker results, validate patch boundaries against task contracts, optionally apply validated text patches, and run the Phase 7 verification engine: command checks, task acceptance review, final supervisor review, and escalation metadata.
+Phase 8 adds host-tool setup guides, sample MCP configs, prompt samples, and smoke-test checklists for Codex Desktop, Codex CLI, Cursor, and OpenCode. Start with `docs/integrations/README.md` for the guide index.
 Phase 3 responses include task contract validation metadata and a deterministic planning prompt. If a plan contains medium or high risk tasks, `runtime_run` creates a run with status `approval_required`; `runtime_approve` records human approval and moves the run to `approved`.
 Phase 4 responses add classifier, model registry, routing policy, budget policy, escalation policy, budget status, policy status, and routing trace metadata. If `budgetStatus.allowed` or `policyStatus.allowed` is `false`, `runtime_run` refuses persisted execution with a policy error.
 Explicit read-only planning prompts such as `plan only`, `read-only`, or `不修改文件` produce low-risk task contracts and can be persisted with status `planned`.
@@ -37,6 +38,8 @@ For read-only planning, include wording such as `plan only` or `不修改文件`
 
 ## Codex CLI
 
+Full guide: `docs/integrations/codex-cli.md`.
+
 For local development from this repository:
 
 ```bash
@@ -58,6 +61,8 @@ If the Runtime returns approval_required, show me the task contracts and wait fo
 
 ## Codex Desktop
 
+Full guide: `docs/integrations/codex-desktop.md`.
+
 Use the same MCP command shape as Codex CLI. In Desktop settings, add an MCP server named `ai-coding-runtime` that runs:
 
 ```bash
@@ -78,6 +83,8 @@ If approval is required, do not execute worker tasks yet.
 ```
 
 ## Cursor
+
+Full guide: `docs/integrations/cursor.md`.
 
 Project-level `.cursor/mcp.json`:
 
@@ -105,6 +112,8 @@ For the HTTP service:
 ```
 
 ## OpenCode
+
+Full guide: `docs/integrations/opencode.md`.
 
 Local stdio MCP:
 
@@ -169,3 +178,19 @@ If `server.apiToken` or `AI_CODING_RUNTIME_API_TOKEN` is set, every endpoint exc
 ```text
 Authorization: Bearer <token>
 ```
+
+## Prompt Samples and Smoke Tests
+
+Reusable prompts:
+
+- `examples/prompts/plan-only.md`
+- `examples/prompts/cost-optimized.md`
+- `examples/prompts/premium-final-review.md`
+- `examples/prompts/high-risk-require-approval.md`
+
+Smoke-test checklists:
+
+- `examples/smoke-tests/codex-desktop.md`
+- `examples/smoke-tests/codex-cli.md`
+- `examples/smoke-tests/cursor.md`
+- `examples/smoke-tests/opencode.md`

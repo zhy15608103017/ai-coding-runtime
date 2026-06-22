@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ai-coding-runtime": {
+      "command": "node",
+      "args": ["./bin/ai-coding-runtime.js", "mcp"]
+    }
+  }
+}

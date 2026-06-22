@@ -403,7 +403,7 @@ codex
 Then prompt:
 
 ```text
-Use ai-coding-runtime to plan, route, execute, verify, and report this task. Optimize for cost, but use premium final review.
+Use ai-coding-runtime to plan and route this task. Optimize for cost, keep premium final review, perform worker changes in the host according to Runtime task contracts, submit structured worker results, then verify and report.
 ```
 
 **Cursor Usage:**
@@ -422,7 +422,7 @@ Cursor rule:
 
 ```md
 Use AI Coding Runtime for multi-step, high-cost, risky, or verification-heavy tasks.
-Plan first, ask for approval on medium/high risk, then execute through Runtime tools.
+Plan first, ask for approval on medium/high risk, perform worker changes in the host according to Runtime task contracts, submit structured worker results, then verify and report through Runtime tools.
 ```
 
 **OpenCode Usage:**
@@ -446,7 +446,7 @@ OpenCode command:
 {
   "command": {
     "runtime": {
-      "template": "Use ai_runtime to plan, route, execute, verify, and summarize this task: $ARGUMENTS",
+      "template": "Use ai_runtime to plan and route this task. Perform worker changes in the host according to Runtime task contracts, submit structured worker results, then verify and summarize: $ARGUMENTS",
       "description": "Run task through AI Coding Runtime"
     }
   }
@@ -455,13 +455,13 @@ OpenCode command:
 
 **Tasks:**
 
-- [ ] Write a setup guide for Codex Desktop.
-- [ ] Write a setup guide for Codex CLI.
-- [ ] Write a setup guide for Cursor.
-- [ ] Write a setup guide for OpenCode.
-- [ ] Add sample MCP configs for each tool.
-- [ ] Add sample prompts for "plan only", "cost optimized", "premium final review", and "high risk require approval".
-- [ ] Add a smoke test checklist for each integration.
+- [x] Write a setup guide for Codex Desktop.
+- [x] Write a setup guide for Codex CLI.
+- [x] Write a setup guide for Cursor.
+- [x] Write a setup guide for OpenCode.
+- [x] Add sample MCP configs for each tool.
+- [x] Add sample prompts for "plan only", "cost optimized", "premium final review", and "high risk require approval".
+- [x] Add a smoke test checklist for each integration.
 
 **Acceptance Criteria:**
 

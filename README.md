@@ -2,7 +2,7 @@
 
 AI Coding Runtime is a local-first orchestration layer for AI coding tasks.
 
-V0 currently covers the Phase 1 runtime skeleton through the Phase 7 verification engine:
+V0 currently covers the Phase 1 runtime skeleton through the Phase 8 host tool integrations:
 
 - create a structured runtime plan from a user request
 - classify tasks into `cheap`, `standard`, and `premium` model tiers
@@ -24,8 +24,9 @@ V0 currently covers the Phase 1 runtime skeleton through the Phase 7 verificatio
 - reject worker patches that touch files outside the task contract
 - optionally apply validated text patches and record each worker attempt in the run trace
 - run Phase 7 verification with diff/test/lint/typecheck/custom command checks, task acceptance review, final supervisor review, and escalation metadata
+- provide setup guides, MCP configs, prompt samples, and smoke-test checklists for Codex Desktop, Codex CLI, Cursor, and OpenCode
 
-V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, apply validated text patches, and run Phase 7 verification. It still does not autonomously generate worker patches from model calls; host tools or future worker loops submit structured worker results for validation.
+V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, apply validated text patches, run Phase 7 verification, and connect to host tools through Phase 8 integration guides. It still does not autonomously generate worker patches from model calls; host tools or future worker loops submit structured worker results for validation.
 Runs that include medium or high risk tasks are stored as `approval_required`. V0 provides a minimal approval input through CLI, HTTP, and MCP; later phases will add execution after approval and richer approval UI.
 Phase 4 routing is deterministic: file-editing tasks route to at least `standard`, final verification routes to `premium`, and failed low-tier attempts can be represented with escalation trace records.
 Explicit read-only planning requests such as `plan only`, `read-only`, or `不修改文件` produce low-risk plans that can be stored as `planned` without an approval gate.
@@ -189,7 +190,7 @@ V0 HTTP endpoints:
 - `GET /api/runs/:id/report`
 - `POST /mcp`
 
-See `docs/integrations.md` for Codex, Cursor, and OpenCode setup examples.
+See `docs/integrations.md` and `docs/integrations/README.md` for Codex Desktop, Codex CLI, Cursor, and OpenCode setup examples.
 
 ## MCP Tools
 
