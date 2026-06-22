@@ -637,13 +637,17 @@ test("custom real providers can use standard API key environment fallback", asyn
 test("runtime_model_generate records model usage and cost in the run trace", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-provider-trace-"));
   const store = new FileExecutionStore({ workspace });
-  const server = await startJsonServer(async () => ({
-    status: 200,
-    body: {
-      choices: [{ finish_reason: "stop", message: { content: "trace ok" } }],
-      usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 },
-    },
-  }));
+  const seen = [];
+  const server = await startJsonServer(async ({ body }) => {
+    seen.push(body);
+    return {
+      status: 200,
+      body: {
+        choices: [{ finish_reason: "stop", message: { content: "trace ok" } }],
+        usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 },
+      },
+    };
+  });
 
   try {
     const run = await callRuntimeTool(
@@ -651,10 +655,12 @@ test("runtime_model_generate records model usage and cost in the run trace", asy
       { request: "plan only: provider trace" },
       { store }
     );
+    const taskId = run.plan.tasks[0].task_id;
     const generated = await callRuntimeTool(
       "runtime_model_generate",
       {
         runId: run.runId,
+        taskId,
         provider: "openai-compatible",
         messages: [{ role: "user", content: "trace" }],
       },
@@ -682,6 +688,10 @@ test("runtime_model_generate records model usage and cost in the run trace", asy
     );
 
     assert.equal(generated.text, "trace ok");
+    assert.equal(generated.request.taskId, taskId);
+    assert.equal(generated.request.task_id, taskId);
+    assert.equal(seen[0].taskId, undefined);
+    assert.equal(seen[0].task_id, undefined);
     const record = await store.readRecord(run.runId);
     assert.equal(record.modelCalls.length, 1);
     assert.equal(record.modelCalls[0].provider, "openai-compatible");
@@ -691,6 +701,8 @@ test("runtime_model_generate records model usage and cost in the run trace", asy
       totalTokens: 5,
     });
     assert.equal(record.modelCalls[0].costEstimate.estimatedCost, 0.000005);
+    assert.equal(record.modelCalls[0].request.taskId, taskId);
+    assert.equal(record.modelCalls[0].request.task_id, taskId);
     assert.ok(record.events.some((event) => event.type === "model.call.finished"));
   } finally {
     await server.close();

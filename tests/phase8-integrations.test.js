@@ -97,17 +97,17 @@ test("Phase 8 smoke checklists cover every supported host tool", async () => {
   }
 });
 
-test("Phase 8 roadmap checklist is complete without marking Phase 9 complete", async () => {
+test("Phase 8 roadmap checklist remains complete without marking Phase 10 complete", async () => {
   const roadmap = await readText("total.md");
   const phase8 = sectionBetween(roadmap, "## Phase 8:", "## Phase 9:");
-  const phase9 = sectionBetween(roadmap, "## Phase 9:", "## Phase 10:");
+  const phase10 = sectionBetween(roadmap, "## Phase 10:", "## Phase 11:");
 
   assert.doesNotMatch(phase8, /plan, route, execute|execute through Runtime|Plan and execute/i);
   for (const task of phase8.matchAll(/- \[(x| )\] /g)) {
     assert.equal(task[1], "x");
   }
-  assert.match(phase9, /- \[ \] /);
-  assert.doesNotMatch(phase9, /- \[x\] /);
+  assert.match(phase10, /- \[ \] /);
+  assert.doesNotMatch(phase10, /- \[x\] /);
 });
 
 async function readText(file) {

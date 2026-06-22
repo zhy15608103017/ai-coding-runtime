@@ -443,7 +443,9 @@ function runStatusForVerification(status) {
 
 async function reportRun(runId, args, store) {
   const record = await store.readRecord(runId);
-  const report = createReport(record);
+  const historyRecords =
+    typeof store.listRecords === "function" ? await store.listRecords() : [];
+  const report = createReport(record, { historyRecords });
 
   if (args?.format === "markdown") {
     return {
@@ -531,10 +533,11 @@ async function modelGenerate(args = {}, store, runtimeOptions = {}) {
   }
 
   const startedAt = Date.now();
+  const providerArgs = modelProviderArgs(args);
   let response;
 
   try {
-    response = await generateModelResponse(args, {
+    response = await generateModelResponse(providerArgs, {
       providers: runtimeOptions.providers,
     });
   } catch (error) {
@@ -542,7 +545,10 @@ async function modelGenerate(args = {}, store, runtimeOptions = {}) {
       throw error;
     }
 
-    const failure = modelGenerationFailure(args, error, startedAt, runtimeOptions);
+    const failure = withModelTraceMetadata(
+      modelGenerationFailure(providerArgs, error, startedAt, runtimeOptions),
+      args
+    );
     await store.recordModelCallFailure(args.runId, {
       provider: failure.provider,
       model: failure.model,
@@ -556,6 +562,8 @@ async function modelGenerate(args = {}, store, runtimeOptions = {}) {
     });
     return failure;
   }
+
+  response = withModelTraceMetadata(response, args);
 
   if (args.runId) {
     await store.recordModelCall(args.runId, {
@@ -733,6 +741,8 @@ function modelGenerateSchema() {
     type: "object",
     properties: {
       runId: { type: "string" },
+      taskId: { type: "string" },
+      task_id: { type: "string" },
       provider: { type: "string" },
       model: { type: "string" },
       prompt: { type: "string" },
@@ -755,6 +765,25 @@ function modelGenerateSchema() {
       timeoutMs: { type: "number" },
     },
     additionalProperties: false,
+  };
+}
+
+function modelProviderArgs(args = {}) {
+  const { runId: _runId, taskId: _taskId, task_id: _task_id, ...providerArgs } = args;
+  return providerArgs;
+}
+
+function withModelTraceMetadata(response, args = {}) {
+  const taskId = args.taskId ?? args.task_id;
+  if (!taskId) return response;
+
+  return {
+    ...response,
+    request: {
+      ...(response.request ?? {}),
+      taskId,
+      task_id: taskId,
+    },
   };
 }
 

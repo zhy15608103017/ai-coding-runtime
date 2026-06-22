@@ -31,7 +31,7 @@
     },
     "glm": {
       "aliases": ["zhipu", "zai"],
-      "model": "glm-5.1",
+      "model": "glm-4.7",
       "transport": "openai-compatible",
       "baseUrl": "https://api.z.ai/api/paas/v4",
       "apiStyle": "chat",

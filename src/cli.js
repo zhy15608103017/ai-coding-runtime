@@ -136,7 +136,8 @@ async function reportCommand(args, io) {
   const config = await loadRuntimeConfig();
   const store = new FileExecutionStore({ workspace: config.storage.directory });
   const record = await store.readRecord(runId);
-  const report = createReport(record);
+  const historyRecords = await store.listRecords();
+  const report = createReport(record, { historyRecords });
 
   if (options.json && !options.markdown) {
     io.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -246,6 +247,7 @@ async function generateCommand(args, io) {
     "runtime_model_generate",
     {
       runId: options.runId,
+      taskId: options.taskId,
       provider: options.provider,
       model: options.model,
       prompt,
@@ -359,6 +361,9 @@ function parseArgs(args) {
     } else if (arg === "--run-id") {
       options.runId = args[index + 1];
       index += 1;
+    } else if (arg === "--task-id") {
+      options.taskId = args[index + 1];
+      index += 1;
     } else if (arg === "--from-file") {
       options.fromFile = args[index + 1];
       index += 1;
@@ -394,6 +399,6 @@ Usage:
   ai-coding-runtime worker-result <run-id> <task-id> --from-file result.json [--apply] [--json]
   ai-coding-runtime report <run-id> [--json|--markdown]
   ai-coding-runtime provider-health [provider] [--json]
-  ai-coding-runtime generate "<prompt>" [--provider name] [--model model] [--run-id run-id] [--json]
+  ai-coding-runtime generate "<prompt>" [--provider name] [--model model] [--run-id run-id] [--task-id task-id] [--json]
 `;
 }

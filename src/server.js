@@ -114,7 +114,9 @@ export function createRuntimeHttpServer({
       const reportMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/report$/);
       if (request.method === "GET" && reportMatch) {
         const record = await store.readRecord(reportMatch[1]);
-        const report = createReport(record);
+        const historyRecords =
+          typeof store.listRecords === "function" ? await store.listRecords() : [];
+        const report = createReport(record, { historyRecords });
 
         if (url.searchParams.get("format") === "markdown") {
           return sendText(response, 200, formatReportMarkdown(report), "text/markdown; charset=utf-8");

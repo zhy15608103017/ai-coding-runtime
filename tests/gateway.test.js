@@ -95,6 +95,12 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     assert.equal(report.budgetStatus.allowed, true);
     assert.equal(report.routingTrace.length, report.taskGraph.length);
     assert.equal(report.modelRegistry.length, 3);
+    assert.ok(report.finalReport);
+    assert.ok(report.costReport);
+    assert.ok(report.perTaskModelUsage.length >= 1);
+    assert.ok(report.modelReliability);
+    assert.ok(report.traceViewerData);
+    assert.equal(report.exportFormat.schema, "ai-coding-runtime.report");
   } finally {
     server.close();
     await rm(workspace, { recursive: true, force: true });
@@ -372,6 +378,7 @@ test("HTTP gateway records and applies worker results", async () => {
     const report = await reportResponse.json();
     assert.equal(report.workerAttempts.length, 1);
     assert.equal(report.workerSummary.appliedCount, 1);
+    assert.deepEqual(report.changedFiles, ["src/app.js"]);
   } finally {
     server.close();
     await rm(workspace, { recursive: true, force: true });

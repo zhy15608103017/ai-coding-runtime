@@ -484,13 +484,13 @@ OpenCode command:
 
 **Tasks:**
 
-- [ ] Add final report sections: summary, changed files, task graph, model routing, cost estimate, verification, risks, follow-up recommendations.
-- [ ] Add per-task model usage and cost estimate.
-- [ ] Add reason fields for every routing and escalation decision.
-- [ ] Add failure categories: provider error, malformed output, policy violation, verification failure, human approval rejected.
-- [ ] Add `ai-coding-runtime report <run-id> --json`.
-- [ ] Add `ai-coding-runtime report <run-id> --markdown`.
-- [ ] Add historical model reliability metrics per task type.
+- [x] Add final report sections: summary, changed files, task graph, model routing, cost estimate, verification, risks, follow-up recommendations.
+- [x] Add per-task model usage and cost estimate.
+- [x] Add reason fields for every routing and escalation decision.
+- [x] Add failure categories: provider error, malformed output, policy violation, verification failure, human approval rejected.
+- [x] Add `ai-coding-runtime report <run-id> --json`.
+- [x] Add `ai-coding-runtime report <run-id> --markdown`.
+- [x] Add historical model reliability metrics per task type.
 
 **Acceptance Criteria:**
 
