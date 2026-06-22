@@ -29,7 +29,22 @@ export const DEFAULT_RUNTIME_CONFIG = {
   },
   providers: DEFAULT_PROVIDER_CONFIG,
   verification: {
+    diff_check: {
+      enabled: true,
+      required: true,
+      timeoutMs: 30000,
+    },
+    test: null,
+    lint: null,
+    typecheck: null,
+    custom_commands: [],
     commands: [],
+    final_review: {
+      enabled: true,
+      provider: null,
+      model: null,
+      requiredForRisk: ["medium", "high"],
+    },
   },
 };
 

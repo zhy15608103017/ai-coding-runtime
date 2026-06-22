@@ -1,5 +1,41 @@
 import { spawn } from "node:child_process";
 
+export function buildVerificationCommands(config = {}) {
+  const commands = [];
+
+  if (config.diff_check?.enabled !== false) {
+    commands.push({
+      name: "git-diff-check",
+      command: "git",
+      args: ["diff", "--check"],
+      required: config.diff_check?.required !== false,
+      timeoutMs: config.diff_check?.timeoutMs,
+      source: "diff_check",
+    });
+  }
+
+  for (const [source, fallbackName] of [
+    ["test", "test"],
+    ["lint", "lint"],
+    ["typecheck", "typecheck"],
+  ]) {
+    const command = normalizeConfiguredCommand(config[source], source, fallbackName);
+    if (command) commands.push(command);
+  }
+
+  for (const command of configuredCommandList(config.custom_commands)) {
+    const normalized = normalizeConfiguredCommand(command, "custom_commands", command.name);
+    if (normalized) commands.push(normalized);
+  }
+
+  for (const command of configuredCommandList(config.commands)) {
+    const normalized = normalizeConfiguredCommand(command, "commands", command.name);
+    if (normalized) commands.push(normalized);
+  }
+
+  return commands;
+}
+
 export async function runVerificationCommands({ commands = [], cwd = process.cwd() } = {}) {
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
@@ -27,6 +63,22 @@ export async function runVerificationCommands({ commands = [], cwd = process.cwd
   };
 }
 
+function configuredCommandList(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeConfiguredCommand(config, source, fallbackName) {
+  if (!config || config.enabled === false) return null;
+  return {
+    name: config.name ?? fallbackName,
+    command: config.command,
+    args: Array.isArray(config.args) ? config.args : [],
+    required: config.required !== false,
+    timeoutMs: config.timeoutMs,
+    source,
+  };
+}
+
 function runVerificationCommand(config = {}, { cwd }) {
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
@@ -39,6 +91,8 @@ function runVerificationCommand(config = {}, { cwd }) {
     command,
     args,
     required,
+    timeoutMs,
+    timeout_ms: timeoutMs,
     status: "failed",
     exitCode: null,
     signal: null,

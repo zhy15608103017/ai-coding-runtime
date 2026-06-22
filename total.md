@@ -356,13 +356,13 @@ expected_output:
 
 **Tasks:**
 
-- [ ] Define verification config fields: `diff_check`, `test`, `lint`, `typecheck`, `custom_commands`.
-- [ ] Add timeout handling for verification commands.
-- [ ] Capture stdout, stderr, exit code, duration, and command name.
-- [ ] Fail the run when required verification commands fail.
-- [ ] Add task-level acceptance review that maps each acceptance item to evidence.
-- [ ] Add final supervisor review prompt that checks requirement alignment, diff risk, and verification evidence.
-- [ ] Add escalation when verification fails after a cheap or standard worker attempt.
+- [x] Define verification config fields: `diff_check`, `test`, `lint`, `typecheck`, `custom_commands`.
+- [x] Add timeout handling for verification commands.
+- [x] Capture stdout, stderr, exit code, duration, and command name.
+- [x] Fail the run when required verification commands fail.
+- [x] Add task-level acceptance review that maps each acceptance item to evidence.
+- [x] Add final supervisor review prompt that checks requirement alignment, diff risk, and verification evidence.
+- [x] Add escalation when verification fails after a cheap or standard worker attempt.
 
 **Acceptance Criteria:**
 

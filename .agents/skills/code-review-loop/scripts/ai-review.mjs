@@ -9,6 +9,7 @@ import {
 } from "./collect-context.mjs";
 import {
   callReviewModel,
+  classifyReviewError,
   isBlockingFinding,
   loadEnvFile,
   loadReviewerAssets,
@@ -72,11 +73,21 @@ async function main() {
   }
 
   const assets = await loadReviewerAssets();
-  const primaryResolved = resolveProviderOptions(options, assets.providersConfig);
-  const secondReviewOptions = resolveSecondReviewOptions(options, assets.providersConfig);
-  const secondResolved = secondReviewOptions
-    ? resolveProviderOptions(secondReviewOptions, assets.providersConfig)
-    : null;
+  let primaryResolved;
+  try {
+    primaryResolved = resolveProviderOptions(options, assets.providersConfig);
+  } catch (error) {
+    const fallbackResolved = fallbackPrimaryReviewer(options);
+    const result = providerResolutionFailureResult(error, fallbackResolved);
+    await writeRequirementAuditArtifacts(outDir, result, renderRequirementAuditBrief(context));
+    const outputMeta = await writeOutputs(outDir, result, brief, options);
+    await appendHistory(outDir, result, options, context, { primary: fallbackResolved, second: null }, outputMeta);
+    process.stdout.write(renderConsoleSummary(result, outDir));
+    process.exitCode = 3;
+    return;
+  }
+  const secondReviewSetup = resolveSecondReviewSetup(options, assets.providersConfig);
+  const secondResolved = secondReviewSetup.resolved;
   const requirementAudit = await runRequirementAudit({
     context,
     outDir,
@@ -104,6 +115,7 @@ async function main() {
     options,
     primaryResolved,
     secondResolved,
+    secondReviewSetup,
   });
   const result = withRequirementAuditPass(reviewRun.result, requirementAudit.result);
 
@@ -121,41 +133,370 @@ async function main() {
 async function runRequirementAudit({ context, outDir, assets, options, primaryResolved }) {
   const auditBrief = renderRequirementAuditBrief(context);
   const auditPrompt = await loadRequirementAuditorPrompt();
-  const result = attachReviewerSource(await callReviewModelWithMalformedRetry({
-    brief: auditBrief,
-    systemPrompt: auditPrompt,
-    schema: assets.schema,
-    options,
-    providersConfig: assets.providersConfig,
-  }), reviewerSource("requirement-auditor", primaryResolved));
+  let result;
+  try {
+    result = attachReviewerSource(await callReviewModelWithMalformedRetry({
+      brief: auditBrief,
+      systemPrompt: auditPrompt,
+      schema: assets.schema,
+      options,
+      providersConfig: assets.providersConfig,
+    }), reviewerSource("requirement-auditor", primaryResolved));
+  } catch (error) {
+    result = {
+      verdict: "needs_human",
+      summary: "需求理解审核模型调用失败，需要人工确认。",
+      blocking_findings: [],
+      warnings: [],
+      verification_notes: [`需求理解审核模型调用失败: ${errorMessage(error)}`],
+      reviewer_failures: [
+        buildReviewerFailure({
+          phase: "requirement_audit",
+          reviewer: "requirement-auditor",
+          resolved: primaryResolved,
+          error,
+        }),
+      ],
+      confidence: 0,
+    };
+  }
   await writeRequirementAuditArtifacts(outDir, result, auditBrief);
   return { result, brief: auditBrief };
 }
 
-async function runReviewPasses({ brief, assets, options, primaryResolved, secondResolved }) {
-  const primaryResult = attachReviewerSource(await callReviewModelWithMalformedRetry({
+export async function runReviewPasses({
+  brief,
+  assets,
+  options,
+  primaryResolved,
+  secondResolved,
+  secondReviewSetup = null,
+  callReviewModelFn = callReviewModel,
+}) {
+  const resolvedSecondReviewSetup = secondReviewSetup || resolveSecondReviewSetup(options, assets.providersConfig);
+  const secondOptions = resolvedSecondReviewSetup.options;
+  const effectiveSecondResolved = secondResolved || resolvedSecondReviewSetup.resolved;
+  const secondConfigFailure = resolvedSecondReviewSetup.failure;
+  const secondConfigError = resolvedSecondReviewSetup.error;
+  const secondReviewMode = resolveSecondReviewMode(options);
+  const primaryReview = () => runSingleReview({
+    brief,
+    assets,
+    options,
+    resolved: primaryResolved,
+    reviewer: "primary",
+    callReviewModelFn,
+  });
+  const secondReview = () => runSingleReview({
+    brief,
+    assets,
+    options: secondOptions,
+    resolved: effectiveSecondResolved,
+    reviewer: "second",
+    callReviewModelFn,
+  });
+
+  if (secondConfigFailure && secondReviewMode === "always") {
+    const primaryOutcome = await settleReview(primaryReview(), {
+      phase: "code_review",
+      reviewer: "primary",
+      resolved: primaryResolved,
+    });
+    return combineReviewOutcomes({
+      primaryOutcome,
+      secondOutcome: {
+        ok: false,
+        error: secondConfigError,
+        failure: secondConfigFailure,
+      },
+      primaryResolved,
+      secondResolved: effectiveSecondResolved,
+      secondReviewMode,
+    });
+  }
+
+  if (secondOptions && secondReviewMode === "always") {
+    const [primaryOutcome, secondOutcome] = await Promise.all([
+      settleReview(primaryReview(), {
+        phase: "code_review",
+        reviewer: "primary",
+        resolved: primaryResolved,
+      }),
+      settleReview(secondReview(), {
+        phase: "code_review",
+        reviewer: "second",
+        resolved: effectiveSecondResolved,
+      }),
+    ]);
+    return combineReviewOutcomes({
+      primaryOutcome,
+      secondOutcome,
+      primaryResolved,
+      secondResolved: effectiveSecondResolved,
+      secondReviewMode,
+    });
+  }
+
+  const primaryOutcome = await settleReview(primaryReview(), {
+    phase: "code_review",
+    reviewer: "primary",
+    resolved: primaryResolved,
+  });
+  if (!primaryOutcome.ok) {
+    if (secondConfigFailure && secondReviewMode !== "off") {
+      return combineReviewOutcomes({
+        primaryOutcome,
+        secondOutcome: {
+          ok: false,
+          error: secondConfigError,
+          failure: secondConfigFailure,
+        },
+        primaryResolved,
+        secondResolved: effectiveSecondResolved,
+        secondReviewMode,
+      });
+    }
+    if (secondOptions && secondReviewMode !== "off") {
+      const secondOutcome = await settleReview(secondReview(), {
+        phase: "code_review",
+        reviewer: "second",
+        resolved: effectiveSecondResolved,
+      });
+      return combineReviewOutcomes({
+        primaryOutcome,
+        secondOutcome,
+        primaryResolved,
+        secondResolved: effectiveSecondResolved,
+        secondReviewMode,
+      });
+    }
+    return singleReviewerFailureRun(primaryOutcome, primaryResolved);
+  }
+
+  const primaryResult = primaryOutcome.result;
+  const primaryRun = { result: primaryResult, resolved: { primary: primaryResolved, second: null } };
+  if (secondConfigFailure && shouldRunSecondReview(primaryResult, options)) {
+    return {
+      result: withReviewerFailures(
+        withReviewNotes(primaryResult, [
+          secondReviewNote(effectiveSecondResolved, secondReviewMode),
+          `二审模型配置不可用，未运行二审模型。原因: ${errorMessage(secondConfigError)}`,
+        ]),
+        [secondConfigFailure],
+      ),
+      resolved: { primary: primaryResolved, second: effectiveSecondResolved },
+    };
+  }
+  if (!secondOptions) return primaryRun;
+  if (!shouldRunSecondReview(primaryResult, options)) {
+    return {
+      result: withReviewNotes(primaryResult, [
+        secondReviewNote(effectiveSecondResolved, secondReviewMode),
+        "检测到二审配置，但 auto 模式未达到触发条件，未运行二审模型。",
+      ]),
+      resolved: { primary: primaryResolved, second: null },
+    };
+  }
+
+  const secondOutcome = await settleReview(secondReview(), {
+    phase: "code_review",
+    reviewer: "second",
+    resolved: effectiveSecondResolved,
+  });
+  return combineReviewOutcomes({
+    primaryOutcome,
+    secondOutcome,
+    primaryResolved,
+    secondResolved: effectiveSecondResolved,
+    secondReviewMode,
+  });
+}
+
+async function runSingleReview({ brief, assets, options, resolved, reviewer, callReviewModelFn }) {
+  return attachReviewerSource(await callReviewModelWithMalformedRetry({
     brief,
     systemPrompt: assets.systemPrompt,
     schema: assets.schema,
     options,
     providersConfig: assets.providersConfig,
-  }), reviewerSource("primary", primaryResolved));
-  const secondOptions = resolveSecondReviewOptions(options, assets.providersConfig);
-  const primaryRun = { result: primaryResult, resolved: { primary: primaryResolved, second: null } };
-  if (!secondOptions) return primaryRun;
-  if (!shouldRunSecondReview(primaryResult, options)) return primaryRun;
+  }, callReviewModelFn), reviewerSource(reviewer, resolved));
+}
 
-  const secondaryResult = attachReviewerSource(await callReviewModelWithMalformedRetry({
-    brief,
-    systemPrompt: assets.systemPrompt,
-    schema: assets.schema,
-    options: secondOptions,
-    providersConfig: assets.providersConfig,
-  }), reviewerSource("second", secondResolved));
+async function settleReview(promise, failureMeta = {}) {
+  try {
+    return { ok: true, result: await promise };
+  } catch (error) {
+    return {
+      ok: false,
+      error,
+      failure: buildReviewerFailure({ ...failureMeta, error }),
+    };
+  }
+}
+
+function combineReviewOutcomes({
+  primaryOutcome,
+  secondOutcome,
+  primaryResolved,
+  secondResolved,
+  secondReviewMode,
+}) {
+  const detectedNote = secondReviewNote(secondResolved, secondReviewMode);
+  if (primaryOutcome.ok && secondOutcome.ok) {
+    return {
+      result: withReviewNotes(mergeReviewResults(primaryOutcome.result, secondOutcome.result), [detectedNote]),
+      resolved: { primary: primaryResolved, second: secondResolved },
+    };
+  }
+  if (primaryOutcome.ok) {
+    return {
+      result: withReviewerFailures(
+        withReviewNotes(primaryOutcome.result, [
+          detectedNote,
+          `二审模型失败，已降级使用主审模型结果。原因: ${errorMessage(secondOutcome.error)}`,
+        ]),
+        [secondOutcome.failure],
+      ),
+      resolved: { primary: primaryResolved, second: secondResolved },
+    };
+  }
+  if (secondOutcome.ok) {
+    return {
+      result: withReviewerFailures(
+        withReviewNotes(secondOutcome.result, [
+          detectedNote,
+          `主审模型失败，已降级使用二审模型结果。原因: ${errorMessage(primaryOutcome.error)}`,
+        ]),
+        [primaryOutcome.failure],
+      ),
+      resolved: { primary: primaryResolved, second: secondResolved },
+    };
+  }
+
   return {
-    result: mergeReviewResults(primaryResult, secondaryResult),
+    result: {
+      verdict: "needs_human",
+      summary: "主审模型和二审模型都未返回可用审核结果，需要人工确认。",
+      blocking_findings: [],
+      warnings: [],
+      verification_notes: [
+        detectedNote,
+        `主审模型失败: ${errorMessage(primaryOutcome.error)}`,
+        `二审模型失败: ${errorMessage(secondOutcome.error)}`,
+      ],
+      reviewer_failures: compactReviewerFailures([
+        primaryOutcome.failure,
+        secondOutcome.failure,
+      ]),
+      confidence: 0,
+    },
     resolved: { primary: primaryResolved, second: secondResolved },
   };
+}
+
+function singleReviewerFailureRun(outcome, primaryResolved) {
+  return {
+    result: {
+      verdict: "needs_human",
+      summary: "主审模型未返回可用审核结果，需要人工确认。",
+      blocking_findings: [],
+      warnings: [],
+      verification_notes: [`主审模型失败: ${errorMessage(outcome.error)}`],
+      reviewer_failures: compactReviewerFailures([outcome.failure]),
+      confidence: 0,
+    },
+    resolved: { primary: primaryResolved, second: null },
+  };
+}
+
+function providerResolutionFailureResult(error, fallbackResolved) {
+  return {
+    verdict: "needs_human",
+    summary: "主审模型配置解析失败，未能启动需求理解审核或代码审核，需要人工确认。",
+    blocking_findings: [],
+    warnings: [],
+    verification_notes: [`主审模型配置解析失败: ${errorMessage(error)}`],
+    reviewer_failures: [
+      buildReviewerFailure({
+        phase: "requirement_audit",
+        reviewer: "primary",
+        resolved: fallbackResolved,
+        error,
+      }),
+    ],
+    confidence: 0,
+  };
+}
+
+function fallbackPrimaryReviewer(options = {}) {
+  return {
+    provider: renderText(options.provider || process.env.AI_REVIEW_PRIMARY_PROVIDER, "unknown"),
+    model: renderText(options.model || process.env.AI_REVIEW_PRIMARY_MODEL, "unknown"),
+  };
+}
+
+function fallbackSecondReviewer(options = {}) {
+  return {
+    provider: renderText(options.provider || options.secondProvider || process.env.AI_REVIEW_SECOND_PROVIDER, "unknown"),
+    model: renderText(options.model || options.secondModel || process.env.AI_REVIEW_SECOND_MODEL, "unknown"),
+  };
+}
+
+function withReviewNotes(result, notes = []) {
+  const existing = result.verification_notes || [];
+  return {
+    ...result,
+    verification_notes: [...notes.filter(Boolean), ...existing],
+  };
+}
+
+function withReviewerFailures(result, failures = []) {
+  const existing = result.reviewer_failures || [];
+  const additions = compactReviewerFailures(failures);
+  if (!additions.length) return result;
+  return {
+    ...result,
+    reviewer_failures: [...existing, ...additions],
+  };
+}
+
+function secondReviewNote(resolved, mode) {
+  return `检测到二审模型配置: ${resolved?.provider || "unknown"}/${resolved?.model || "unknown"}，模式: ${mode}。`;
+}
+
+function errorMessage(error) {
+  return String(error?.message || error || "unknown error");
+}
+
+function buildReviewerFailure({ phase, reviewer, resolved, error }) {
+  const classified = classifyReviewError(error);
+  return {
+    phase: renderText(phase, "code_review"),
+    reviewer: renderText(reviewer, "unknown"),
+    provider: renderText(resolved?.provider, "unknown"),
+    model: renderText(resolved?.model, "unknown"),
+    category: classified.category,
+    retryable: classified.retryable,
+    message: classified.message,
+    status: classified.status,
+    attempts: classified.attempts,
+  };
+}
+
+function compactReviewerFailures(failures = []) {
+  return failures
+    .filter((failure) => failure && typeof failure === "object")
+    .map((failure) => ({
+      phase: renderText(failure.phase, "code_review"),
+      reviewer: renderText(failure.reviewer, "unknown"),
+      provider: renderText(failure.provider, "unknown"),
+      model: renderText(failure.model, "unknown"),
+      category: renderText(failure.category, "unknown"),
+      retryable: Boolean(failure.retryable),
+      message: renderText(failure.message, "unknown error"),
+      status: typeof failure.status === "number" ? failure.status : null,
+      attempts: Number.isInteger(failure.attempts) && failure.attempts >= 1 ? failure.attempts : null,
+    }));
 }
 
 export function buildSecondReviewOptions(options, providersConfig) {
@@ -182,6 +523,8 @@ export function buildSecondReviewOptions(options, providersConfig) {
     ...options,
     usePrimaryEnv: false,
     secondReviewMode,
+    timeoutMs: positiveNumber(options.secondTimeoutMs, readEnv("AI_REVIEW_SECOND_TIMEOUT_MS"), 60000),
+    retries: nonNegativeInteger(options.secondRetries, readEnv("AI_REVIEW_SECOND_RETRIES"), 0),
     provider: secondConfig.provider || (secondConfig.model ? undefined : options.provider),
     model: secondConfig.model || options.model,
     baseUrl: secondConfig.baseUrl || options.baseUrl,
@@ -193,16 +536,40 @@ export function buildSecondReviewOptions(options, providersConfig) {
 }
 
 export function resolveSecondReviewOptions(options, providersConfig) {
+  return resolveSecondReviewSetup(options, providersConfig).options;
+}
+
+export function resolveSecondReviewSetup(options, providersConfig) {
   const secondOptions = buildSecondReviewOptions(options, providersConfig);
-  if (!secondOptions || !providersConfig) return secondOptions;
-  return hasUsableProviderConfig(secondOptions, providersConfig) ? secondOptions : null;
+  if (!secondOptions || !providersConfig) {
+    return { options: secondOptions, resolved: null, failure: null, error: null };
+  }
+
+  try {
+    const resolved = resolveProviderOptions(secondOptions, providersConfig);
+    assertUsableProviderConfig(resolved);
+    return { options: secondOptions, resolved, failure: null, error: null };
+  } catch (error) {
+    const resolved = fallbackSecondReviewer(secondOptions);
+    return {
+      options: null,
+      resolved,
+      failure: buildReviewerFailure({
+        phase: "code_review",
+        reviewer: "second",
+        resolved,
+        error,
+      }),
+      error,
+    };
+  }
 }
 
 export function shouldRunSecondReview(primaryResult, options = {}) {
   const secondReviewMode = resolveSecondReviewMode(options);
   if (secondReviewMode === "off") return false;
   if (secondReviewMode === "always") return true;
-  return meetsSecondReviewThreshold(primaryResult, options);
+  return meetsSecondReviewThreshold(primaryResult, options) || isBelowSecondReviewConfidenceThreshold(primaryResult, options);
 }
 
 function resolveSecondReviewMode(options = {}) {
@@ -226,13 +593,18 @@ function isSecondReviewerConfigured(config) {
   );
 }
 
-function hasUsableProviderConfig(options, providersConfig) {
-  try {
-    const providerOptions = resolveProviderOptions(options, providersConfig);
-    if (providerOptions.transport === "cli") return Boolean(providerOptions.cliCommand);
-    return Boolean(providerOptions.baseUrl && providerOptions.apiKey);
-  } catch {
-    return false;
+function assertUsableProviderConfig(providerOptions) {
+  if (providerOptions.transport === "cli") {
+    if (!providerOptions.cliCommand) {
+      throw new Error(`Missing CLI command for provider "${providerOptions.provider}".`);
+    }
+    return;
+  }
+  if (!providerOptions.baseUrl) {
+    throw new Error(`Missing base URL for provider "${providerOptions.provider}".`);
+  }
+  if (!providerOptions.apiKey) {
+    throw new Error(`Missing API key for provider "${providerOptions.provider}".`);
   }
 }
 
@@ -258,12 +630,50 @@ function resolveSecondReviewThresholds(options = {}) {
   };
 }
 
+function isBelowSecondReviewConfidenceThreshold(result, options = {}) {
+  const confidence = Number(result?.confidence);
+  return Number.isFinite(confidence) && confidence < resolveSecondReviewConfidenceThreshold(options);
+}
+
+function resolveSecondReviewConfidenceThreshold(options = {}) {
+  return numberInRange(
+    options.secondConfidenceThreshold,
+    readEnv("AI_REVIEW_SECOND_CONFIDENCE_THRESHOLD"),
+    0.8,
+  );
+}
+
 function positiveInteger(...values) {
   for (const value of values) {
     const parsed = Number(value);
     if (Number.isInteger(parsed) && parsed >= 1) return parsed;
   }
   return 1;
+}
+
+function nonNegativeInteger(...values) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed >= 0) return parsed;
+  }
+  return 0;
+}
+
+function positiveNumber(...values) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 1;
+}
+
+function numberInRange(...values) {
+  const fallback = values[values.length - 1];
+  for (const value of values.slice(0, -1)) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) return parsed;
+  }
+  return fallback;
 }
 
 function normalizeSecondReviewMode(value) {
@@ -279,14 +689,14 @@ function readEnv(name) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-async function callReviewModelWithMalformedRetry(reviewOptions) {
+async function callReviewModelWithMalformedRetry(reviewOptions, callReviewModelFn = callReviewModel) {
   try {
-    return await callReviewModel(reviewOptions);
+    return await callReviewModelFn(reviewOptions);
   } catch (error) {
     if (!isMalformedReviewerOutput(error)) {
       throw error;
     }
-    return callReviewModel(reviewOptions);
+    return callReviewModelFn(reviewOptions);
   }
 }
 
@@ -324,6 +734,10 @@ export function mergeReviewResults(primary, secondary) {
       ...(primary.verification_notes || []),
       ...(secondary.verification_notes || []),
     ],
+    reviewer_failures: compactReviewerFailures([
+      ...(primary.reviewer_failures || []),
+      ...(secondary.reviewer_failures || []),
+    ]),
     confidence: Math.min(numberOrZero(primary.confidence), numberOrZero(secondary.confidence)),
   };
 

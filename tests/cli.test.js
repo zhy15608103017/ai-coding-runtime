@@ -235,6 +235,7 @@ test("verify command runs configured verification commands", async () => {
       JSON.stringify(
         {
           verification: {
+            diff_check: { enabled: false },
             commands: [
               {
                 name: "node-version",
@@ -281,6 +282,7 @@ test("verify command exits nonzero when a required verification command fails", 
       JSON.stringify(
         {
           verification: {
+            diff_check: { enabled: false },
             commands: [
               {
                 name: "failing-required-command",

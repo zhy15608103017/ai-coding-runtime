@@ -56,14 +56,26 @@
     }
   },
   "verification": {
-    "commands": [
-      {
-        "name": "node-tests",
-        "command": "node",
-        "args": ["--test"],
-        "required": true,
-        "timeoutMs": 120000
-      }
-    ]
+    "diff_check": {
+      "enabled": true,
+      "required": true,
+      "timeoutMs": 30000
+    },
+    "test": {
+      "command": "node",
+      "args": ["--test"],
+      "required": true,
+      "timeoutMs": 120000
+    },
+    "lint": null,
+    "typecheck": null,
+    "custom_commands": [],
+    "commands": [],
+    "final_review": {
+      "enabled": true,
+      "provider": null,
+      "model": null,
+      "requiredForRisk": ["medium", "high"]
+    }
   }
 }

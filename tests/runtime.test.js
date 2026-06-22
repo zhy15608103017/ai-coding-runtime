@@ -1409,6 +1409,7 @@ test("runtime_verify records explicit lifecycle status transitions", async () =>
         store,
         runtimeOptions: {
           verification: {
+            diff_check: { enabled: false },
             commands: [],
           },
         },
@@ -1470,6 +1471,7 @@ test("runtime_verify runs configured commands and records structured evidence", 
         store,
         runtimeOptions: {
           verification: {
+            diff_check: { enabled: false },
             commands: [
               {
                 name: "node-version",
@@ -1515,6 +1517,7 @@ test("runtime_verify marks required command failures as verification_failed", as
         store,
         runtimeOptions: {
           verification: {
+            diff_check: { enabled: false },
             commands: [
               {
                 name: "failing-command",
@@ -1556,6 +1559,7 @@ test("runtime_verify does not overwrite a run canceled during verification", asy
         store,
         runtimeOptions: {
           verification: {
+            diff_check: { enabled: false },
             commands: [
               {
                 name: "delayed-success",
@@ -1606,6 +1610,7 @@ test("runtime_verify records command spawn errors as verification_failed", async
         runtimeOptions: {
           verification: {
             cwd: path.join(workspace, "missing-directory"),
+            diff_check: { enabled: false },
             commands: [
               {
                 name: "bad-cwd",
@@ -1647,6 +1652,7 @@ test("runtime_report markdown includes verification command evidence", async () 
         store,
         runtimeOptions: {
           verification: {
+            diff_check: { enabled: false },
             commands: [
               {
                 name: "node-version",

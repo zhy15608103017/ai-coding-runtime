@@ -10,7 +10,14 @@ import { FileExecutionStore } from "../src/index.js";
 test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-http-"));
   const store = new FileExecutionStore({ workspace });
-  const server = createRuntimeHttpServer({ store });
+  const server = createRuntimeHttpServer({
+    store,
+    runtimeOptions: {
+      verification: {
+        final_review: { enabled: false },
+      },
+    },
+  });
   const started = await listen(server, { host: "127.0.0.1", port: 0 });
 
   try {
@@ -59,8 +66,8 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     assert.equal(verifyResponse.status, 200);
     const verification = await verifyResponse.json();
     assert.equal(verification.runId, run.runId);
-    assert.equal(verification.status, "skipped");
-    assert.match(verification.message, /No verification commands configured/);
+    assert.equal(verification.status, "passed");
+    assert.equal(verification.commands[0].name, "git-diff-check");
 
     const cancelResponse = await postJson(`${started.httpUrl}/api/runs/${run.runId}/cancel`, {
       reason: "test cleanup",
@@ -101,6 +108,7 @@ test("HTTP gateway passes verification runtime options to runtime_verify", async
     store,
     runtimeOptions: {
       verification: {
+        diff_check: { enabled: false },
         commands: [
           {
             name: "node-version",
@@ -141,6 +149,45 @@ test("HTTP gateway passes verification runtime options to runtime_verify", async
   }
 });
 
+test("HTTP gateway passes verification request overrides to runtime_verify", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-http-verify-body-"));
+  const store = new FileExecutionStore({ workspace });
+  const server = createRuntimeHttpServer({ store });
+  const started = await listen(server, { host: "127.0.0.1", port: 0 });
+
+  try {
+    const runResponse = await postJson(`${started.httpUrl}/api/runs`, {
+      request: "plan only: verify request override",
+    });
+    assert.equal(runResponse.status, 201);
+    const run = await runResponse.json();
+
+    const verifyResponse = await postJson(`${started.httpUrl}/api/verify`, {
+      runId: run.runId,
+      verification: {
+        diff_check: { enabled: false },
+        commands: [
+          {
+            name: "node-version",
+            command: process.execPath,
+            args: ["--version"],
+            required: true,
+          },
+        ],
+      },
+    });
+    assert.equal(verifyResponse.status, 200);
+    const verification = await verifyResponse.json();
+
+    assert.equal(verification.status, "passed");
+    assert.equal(verification.commands.length, 1);
+    assert.equal(verification.commands[0].name, "node-version");
+  } finally {
+    server.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("HTTP MCP endpoint lists and calls runtime tools with structured content", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-mcp-http-"));
   const store = new FileExecutionStore({ workspace });
@@ -171,6 +218,7 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
     assert.equal(list.status, 200);
     const listed = await list.json();
     const toolNames = listed.result.tools.map((tool) => tool.name);
+    const verifyTool = listed.result.tools.find((tool) => tool.name === "runtime_verify");
     assert.deepEqual(toolNames, [
       "runtime_plan",
       "runtime_estimate",
@@ -185,6 +233,7 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
       "runtime_model_generate",
       "runtime_submit_worker_result",
     ]);
+    assert.ok(verifyTool.inputSchema.properties.verification);
 
     const call = await postJson(`${started.httpUrl}/mcp`, {
       jsonrpc: "2.0",
@@ -202,6 +251,47 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
     assert.match(called.result.structuredContent.runId, /^run_/);
     assert.equal(called.result.structuredContent.status, "approval_required");
     assert.equal(called.result.content[0].type, "text");
+
+    const planOnlyRunResponse = await postJson(`${started.httpUrl}/mcp`, {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: {
+        name: "runtime_run",
+        arguments: {
+          request: "plan only: verify through MCP override",
+        },
+      },
+    });
+    assert.equal(planOnlyRunResponse.status, 200);
+    const planOnlyRun = await planOnlyRunResponse.json();
+
+    const verifyResponse = await postJson(`${started.httpUrl}/mcp`, {
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/call",
+      params: {
+        name: "runtime_verify",
+        arguments: {
+          runId: planOnlyRun.result.structuredContent.runId,
+          verification: {
+            diff_check: { enabled: false },
+            commands: [
+              {
+                name: "node-version",
+                command: process.execPath,
+                args: ["--version"],
+                required: true,
+              },
+            ],
+          },
+        },
+      },
+    });
+    assert.equal(verifyResponse.status, 200);
+    const verified = await verifyResponse.json();
+    assert.equal(verified.result.structuredContent.status, "passed");
+    assert.equal(verified.result.structuredContent.commands[0].name, "node-version");
   } finally {
     server.close();
     await rm(workspace, { recursive: true, force: true });

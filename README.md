@@ -2,7 +2,7 @@
 
 AI Coding Runtime is a local-first orchestration layer for AI coding tasks.
 
-V0 currently covers the Phase 1 runtime skeleton through the Phase 6 constrained worker-result surface:
+V0 currently covers the Phase 1 runtime skeleton through the Phase 7 verification engine:
 
 - create a structured runtime plan from a user request
 - classify tasks into `cheap`, `standard`, and `premium` model tiers
@@ -23,8 +23,9 @@ V0 currently covers the Phase 1 runtime skeleton through the Phase 6 constrained
 - detect worker results that explicitly include task `forbidden_actions`
 - reject worker patches that touch files outside the task contract
 - optionally apply validated text patches and record each worker attempt in the run trace
+- run Phase 7 verification with diff/test/lint/typecheck/custom command checks, task acceptance review, final supervisor review, and escalation metadata
 
-V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, apply validated text patches, and run configured deterministic verification commands. It still does not autonomously generate worker patches from model calls; host tools or future worker loops submit structured worker results for validation.
+V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, apply validated text patches, and run Phase 7 verification. It still does not autonomously generate worker patches from model calls; host tools or future worker loops submit structured worker results for validation.
 Runs that include medium or high risk tasks are stored as `approval_required`. V0 provides a minimal approval input through CLI, HTTP, and MCP; later phases will add execution after approval and richer approval UI.
 Phase 4 routing is deterministic: file-editing tasks route to at least `standard`, final verification routes to `premium`, and failed low-tier attempts can be represented with escalation trace records.
 Explicit read-only planning requests such as `plan only`, `read-only`, or `不修改文件` produce low-risk plans that can be stored as `planned` without an approval gate.
@@ -117,20 +118,34 @@ Copy `runtime.config.example.json` to `runtime.config.json` and adjust it:
     }
   },
   "verification": {
-    "commands": [
-      {
-        "name": "node-tests",
-        "command": "node",
-        "args": ["--test"],
-        "required": true,
-        "timeoutMs": 120000
-      }
-    ]
+    "diff_check": {
+      "enabled": true,
+      "required": true,
+      "timeoutMs": 30000
+    },
+    "test": {
+      "command": "node",
+      "args": ["--test"],
+      "required": true,
+      "timeoutMs": 120000
+    },
+    "lint": null,
+    "typecheck": null,
+    "custom_commands": [],
+    "commands": [],
+    "final_review": {
+      "enabled": true,
+      "provider": null,
+      "model": null,
+      "requiredForRisk": ["medium", "high"]
+    }
   }
 }
 ```
 
-`verification.commands` is optional. When present, `runtime_verify`, `POST /api/verify`, and `ai-coding-runtime verify <run-id>` run the commands in order, record stdout, stderr, exit code, duration, and mark the run as `verification_passed`, `verification_failed`, or `verification_skipped`.
+`verification.diff_check` runs `git diff --check` by default. `verification.test`, `verification.lint`, `verification.typecheck`, and `verification.custom_commands` add named command checks; `verification.commands` remains supported as a legacy command list. `runtime_verify`, `POST /api/verify`, and `ai-coding-runtime verify <run-id>` run checks in order, record stdout, stderr, exit code, duration, acceptance review, final supervisor review, and escalation metadata, then mark the run as `verification_passed`, `verification_failed`, or `verification_skipped`.
+
+`verification.final_review` controls provider-backed final review for medium/high-risk tasks. Set both `provider` and `model` to use a configured provider; when final review is required but either value is missing, verification fails instead of reporting success without review evidence.
 
 Environment variables can override local config:
 
@@ -193,6 +208,6 @@ The MCP gateway exposes:
 - `runtime_model_generate`
 - `runtime_submit_worker_result`
 
-`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`. `runtime_verify` can run from `planned`, `approved`, or `verification_failed` and records structured command evidence.
+`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`. `runtime_verify` can run from `planned`, `approved`, or `verification_failed`; it accepts an optional `verification` override object and records command checks, task acceptance review, final supervisor review, and escalation evidence.
 `runtime_model_generate` calls a configured provider through the normalized Phase 5 interface. When given `runId`, it appends model usage, estimated cost, finish reason, and request metadata to the run trace.
 `runtime_submit_worker_result` validates a structured worker result against the task contract, builds worker context from `allowed_files` plus read-only `referenced_files`, rejects patches outside `allowed_files`, optionally applies the patch when `apply: true`, and records the worker attempt for reporting.

@@ -1,8 +1,10 @@
 import { createRuntimePlan } from "./planner.js";
+import { reviewTaskAcceptance } from "./acceptance.js";
 import { checkProviderHealth, generateModelResponse } from "./providers.js";
 import { createReport, formatReportMarkdown } from "./report.js";
 import { RUN_STATUS, canVerifyRun } from "./status.js";
-import { runVerificationCommands } from "./verification.js";
+import { runSupervisorReview } from "./supervisor.js";
+import { buildVerificationCommands, runVerificationCommands } from "./verification.js";
 import { submitWorkerResult } from "./worker.js";
 
 export const RUNTIME_TOOLS = [
@@ -34,7 +36,7 @@ export const RUNTIME_TOOLS = [
   {
     name: "runtime_verify",
     description: "Run or record verification for a runtime run.",
-    inputSchema: runIdSchema(),
+    inputSchema: verifySchema(),
   },
   {
     name: "runtime_report",
@@ -112,7 +114,7 @@ export async function callRuntimeTool(name, args, { store, runtimeOptions = {} }
     case "runtime_collect":
       return collectRun(requireRunId(args), store);
     case "runtime_verify":
-      return verifyRun(requireRunId(args), store, runtimeOptions);
+      return verifyRun(requireRunId(args), store, withVerificationOverride(runtimeOptions, args));
     case "runtime_report":
       return reportRun(requireRunId(args), args, store);
     case "runtime_cancel":
@@ -217,9 +219,10 @@ async function collectRun(runId, store) {
 }
 
 async function verifyRun(runId, store, runtimeOptions = {}) {
-  const commands = runtimeOptions.verification?.commands ?? [];
-  const cwd = runtimeOptions.verification?.cwd ?? process.cwd();
-  const startedAt = new Date().toISOString();
+  const commands = buildVerificationCommands(runtimeOptions.verification ?? {});
+  const cwd = runtimeOptions.verification?.cwd ?? runtimeOptions.workspace?.cwd ?? process.cwd();
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
 
   await store.updateRecord(
     runId,
@@ -242,12 +245,64 @@ async function verifyRun(runId, store, runtimeOptions = {}) {
   );
 
   const result = await runVerificationCommands({ commands, cwd });
-  const verification = {
+  const commandVerification = {
     runId,
     name: "verification",
     ...result,
   };
-  const finishedAt = new Date(verification.finishedAt);
+  const latestRecord = await store.readRecord(runId);
+  const acceptance = reviewTaskAcceptance({
+    tasks: latestRecord.plan.tasks,
+    workerAttempts: latestRecord.workerAttempts,
+  });
+  const preliminaryVerification = {
+    ...commandVerification,
+    status: combineVerificationStatus(commandVerification.status, acceptance.status),
+    message: verificationMessageForStatus(
+      combineVerificationStatus(commandVerification.status, acceptance.status),
+      commandVerification.message
+    ),
+    acceptance,
+  };
+  const supervisorReview = await runSupervisorReview({
+    record: latestRecord,
+    verification: preliminaryVerification,
+    config: {
+      ...(runtimeOptions.verification?.final_review ?? {}),
+      generate: async (request) =>
+        generateSupervisorModelResponse({
+          runId,
+          request,
+          store,
+          runtimeOptions,
+        }),
+    },
+  });
+  let verification = {
+    ...preliminaryVerification,
+    status: combineVerificationStatus(preliminaryVerification.status, supervisorReview.status),
+    message: verificationMessageForStatus(
+      combineVerificationStatus(preliminaryVerification.status, supervisorReview.status),
+      preliminaryVerification.message
+    ),
+    supervisorReview,
+    supervisor_review: supervisorReview,
+  };
+  verification = {
+    ...verification,
+    escalation: evaluateVerificationEscalation({
+      record: latestRecord,
+      verification,
+    }),
+  };
+  const finishedAtMs = Date.now();
+  const finishedAt = new Date(finishedAtMs);
+  verification = {
+    ...verification,
+    startedAt,
+    finishedAt: finishedAt.toISOString(),
+    durationMs: finishedAtMs - startedAtMs,
+  };
 
   await store.updateRecord(
     runId,
@@ -257,6 +312,15 @@ async function verifyRun(runId, store, runtimeOptions = {}) {
         record.status = runStatusForVerification(verification.status);
       }
       record.verification.push(verification);
+      if (verification.escalation.required) {
+        record.events.push({
+          type: "verification.escalation.required",
+          timestamp: verification.finishedAt,
+          reason: verification.escalation.reason,
+          targetTier: verification.escalation.targetTier,
+          target_tier: verification.escalation.target_tier,
+        });
+      }
       record.events.push({
         type: "verification.finished",
         timestamp: verification.finishedAt,
@@ -268,10 +332,101 @@ async function verifyRun(runId, store, runtimeOptions = {}) {
       });
       return record;
     },
-    { now: Number.isNaN(finishedAt.getTime()) ? undefined : finishedAt }
+    { now: finishedAt }
   );
 
   return verification;
+}
+
+function evaluateVerificationEscalation({ record, verification }) {
+  if (verification.status !== "failed") {
+    return {
+      required: false,
+      reason: "verification_not_failed",
+      fromTiers: [],
+      from_tiers: [],
+      targetTier: null,
+      target_tier: null,
+    };
+  }
+
+  const taskById = new Map(
+    (record.plan?.tasks ?? []).map((task) => [task.task_id ?? task.id, task])
+  );
+  const fromTiers = [
+    ...new Set(
+      (record.workerAttempts ?? [])
+        .filter((attempt) => ["failed", "applied", "recorded"].includes(attempt.status))
+        .map((attempt) => {
+          const taskId = attempt.task_id ?? attempt.taskId;
+          const task = taskById.get(taskId);
+          return task?.model_tier ?? task?.modelTier;
+        })
+        .filter((tier) => tier === "cheap" || tier === "standard")
+    ),
+  ].sort();
+  const required = fromTiers.length > 0;
+
+  return {
+    required,
+    reason: required
+      ? "verification_failed_after_non_premium_worker"
+      : "no_non_premium_worker_attempt",
+    fromTiers,
+    from_tiers: fromTiers,
+    targetTier: required ? "premium" : null,
+    target_tier: required ? "premium" : null,
+  };
+}
+
+async function generateSupervisorModelResponse({ runId, request, store, runtimeOptions = {} }) {
+  const startedAt = Date.now();
+  let response;
+
+  try {
+    response = await generateModelResponse(request, {
+      providers: runtimeOptions.providers,
+    });
+  } catch (error) {
+    const failure = modelGenerationFailure(request, error, startedAt, runtimeOptions);
+    await store.recordModelCallFailure(runId, {
+      provider: failure.provider,
+      model: failure.model,
+      usage: failure.usage,
+      costEstimate: failure.costEstimate,
+      cost_estimate: failure.cost_estimate,
+      finishReason: failure.finishReason,
+      finish_reason: failure.finish_reason,
+      request: failure.request,
+      error: failure.error,
+    });
+    return failure;
+  }
+
+  await store.recordModelCall(runId, {
+    provider: response.provider,
+    model: response.model,
+    usage: response.usage,
+    costEstimate: response.costEstimate,
+    cost_estimate: response.cost_estimate,
+    finishReason: response.finishReason,
+    finish_reason: response.finish_reason,
+    request: response.request,
+  });
+
+  return response;
+}
+
+function combineVerificationStatus(...statuses) {
+  if (statuses.includes("failed")) return "failed";
+  if (statuses.includes("passed")) return "passed";
+  return "skipped";
+}
+
+function verificationMessageForStatus(status, fallback) {
+  if (status === "failed") return "Verification failed.";
+  if (status === "passed") return "Verification evidence passed.";
+  return fallback ?? "No verification evidence recorded.";
 }
 
 function runStatusForVerification(status) {
@@ -531,6 +686,46 @@ function runIdSchema() {
     required: ["runId"],
     additionalProperties: false,
   };
+}
+
+function verifySchema() {
+  return {
+    type: "object",
+    properties: {
+      runId: { type: "string" },
+      verification: { type: "object" },
+    },
+    required: ["runId"],
+    additionalProperties: false,
+  };
+}
+
+function withVerificationOverride(runtimeOptions = {}, args = {}) {
+  if (!args?.verification || typeof args.verification !== "object" || Array.isArray(args.verification)) {
+    return runtimeOptions;
+  }
+
+  return {
+    ...runtimeOptions,
+    verification: mergePlainObjects(runtimeOptions.verification ?? {}, args.verification),
+  };
+}
+
+function mergePlainObjects(base, override) {
+  const result = { ...base };
+
+  for (const [key, value] of Object.entries(override)) {
+    result[key] =
+      isPlainObject(value) && isPlainObject(result[key])
+        ? mergePlainObjects(result[key], value)
+        : value;
+  }
+
+  return result;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function modelGenerateSchema() {

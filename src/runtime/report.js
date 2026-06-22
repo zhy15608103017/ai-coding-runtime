@@ -2,6 +2,8 @@ export function createReport(record) {
   const tasks = record.plan.tasks;
   const modelCalls = Array.isArray(record.modelCalls) ? record.modelCalls : [];
   const workerAttempts = Array.isArray(record.workerAttempts) ? record.workerAttempts : [];
+  const verification = Array.isArray(record.verification) ? record.verification : [];
+  const latestVerification = verification.at(-1);
   const tierCounts = tasks.reduce((counts, task) => {
     counts[task.modelTier] = (counts[task.modelTier] ?? 0) + 1;
     return counts;
@@ -51,7 +53,17 @@ export function createReport(record) {
       currency: modelCalls[0]?.costEstimate?.currency ?? modelCalls[0]?.cost_estimate?.currency ?? "USD",
     },
     estimatedCost: record.plan.estimatedCost,
-    verification: record.verification,
+    verification,
+    verificationSummary: {
+      latestStatus: latestVerification?.status ?? "skipped",
+      commandStatus: summarizeCommandStatus(latestVerification?.commands ?? []),
+      acceptanceStatus: latestVerification?.acceptance?.status ?? "skipped",
+      supervisorStatus:
+        latestVerification?.supervisorReview?.status ??
+        latestVerification?.supervisor_review?.status ??
+        "skipped",
+      escalationRequired: latestVerification?.escalation?.required === true,
+    },
     events: record.events,
   };
 }
@@ -142,23 +154,88 @@ function formatVerificationMarkdown(verification) {
 
   return verification
     .flatMap((item) => {
-      const lines = [`- ${item.name}: ${item.status}`];
+      const supervisor = item.supervisorReview ?? item.supervisor_review;
+      const lines = [
+        `- ${item.name}: ${item.status}`,
+        `  - message: ${item.message ?? "none"}`,
+        `  - Command Checks`,
+      ];
 
-      if (item.message) {
-        lines.push(`  - message: ${item.message}`);
-      }
-
-      for (const command of item.commands ?? []) {
-        const exitCode =
-          command.exitCode === null || command.exitCode === undefined
-            ? "none"
-            : command.exitCode;
-        lines.push(
-          `  - ${command.name}: ${command.status} (exitCode: ${exitCode}, required: ${command.required}, durationMs: ${command.durationMs})`
-        );
-      }
+      lines.push(...formatCommandChecks(item.commands ?? []));
+      lines.push(`  - Acceptance Review: ${item.acceptance?.status ?? "skipped"}`);
+      lines.push(...formatAcceptanceReview(item.acceptance));
+      lines.push(`  - Final Supervisor Review: ${supervisor?.status ?? "skipped"}`);
+      lines.push(...formatSupervisorReview(supervisor));
+      lines.push(`  - Escalation: ${item.escalation?.required === true ? "required" : "not required"}`);
+      lines.push(...formatEscalation(item.escalation));
 
       return lines;
     })
     .join("\n");
+}
+
+function summarizeCommandStatus(commands) {
+  if (commands.length === 0) return "skipped";
+  if (commands.some((command) => command.required && command.status !== "passed")) {
+    return "failed";
+  }
+  return "passed";
+}
+
+function formatCommandChecks(commands) {
+  if (commands.length === 0) {
+    return ["    - skipped: no command checks configured."];
+  }
+
+  return commands.map((command) => {
+    const exitCode =
+      command.exitCode === null || command.exitCode === undefined ? "none" : command.exitCode;
+    return `    - ${command.name}: ${command.status} (exitCode: ${exitCode}, required: ${command.required}, durationMs: ${command.durationMs})`;
+  });
+}
+
+function formatAcceptanceReview(acceptance) {
+  if (!acceptance || acceptance.tasks?.length === 0) {
+    return ["    - skipped: no task acceptance review recorded."];
+  }
+
+  return acceptance.tasks.flatMap((task) => [
+    `    - ${task.task_id ?? task.taskId}: ${task.status}`,
+    ...(task.items ?? []).map(
+      (item) =>
+        `      - ${item.criterion}: ${item.status}${item.evidence ? ` (${item.evidence})` : ""}`
+    ),
+  ]);
+}
+
+function formatSupervisorReview(supervisor) {
+  if (!supervisor) {
+    return ["    - skipped: no final supervisor review recorded."];
+  }
+
+  const lines = [];
+  if (supervisor.reason) lines.push(`    - reason: ${supervisor.reason}`);
+  if (supervisor.summary) lines.push(`    - summary: ${supervisor.summary}`);
+  if (supervisor.diffRisk ?? supervisor.diff_risk) {
+    lines.push(`    - diff risk: ${supervisor.diffRisk ?? supervisor.diff_risk}`);
+  }
+  for (const issue of supervisor.blockingIssues ?? supervisor.blocking_issues ?? []) {
+    lines.push(`    - blocking issue: ${issue}`);
+  }
+  for (const error of supervisor.errors ?? []) {
+    lines.push(`    - error: ${error.code}`);
+  }
+  return lines.length ? lines : ["    - no additional supervisor details."];
+}
+
+function formatEscalation(escalation) {
+  if (!escalation) {
+    return ["    - reason: no escalation metadata recorded."];
+  }
+
+  return [
+    `    - reason: ${escalation.reason}`,
+    `    - from tiers: ${(escalation.fromTiers ?? escalation.from_tiers ?? []).join(", ") || "none"}`,
+    `    - target tier: ${escalation.targetTier ?? escalation.target_tier ?? "none"}`,
+  ];
 }
