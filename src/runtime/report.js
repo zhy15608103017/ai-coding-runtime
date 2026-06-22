@@ -1,6 +1,7 @@
 export function createReport(record) {
   const tasks = record.plan.tasks;
   const modelCalls = Array.isArray(record.modelCalls) ? record.modelCalls : [];
+  const workerAttempts = Array.isArray(record.workerAttempts) ? record.workerAttempts : [];
   const tierCounts = tasks.reduce((counts, task) => {
     counts[task.modelTier] = (counts[task.modelTier] ?? 0) + 1;
     return counts;
@@ -38,6 +39,12 @@ export function createReport(record) {
     policyStatus: record.plan.policyStatus,
     routingTrace: record.plan.routingTrace,
     modelCalls,
+    workerAttempts,
+    workerSummary: {
+      attemptCount: workerAttempts.length,
+      appliedCount: workerAttempts.filter((attempt) => attempt.applied === true).length,
+      filesTouched: unique(workerAttempts.flatMap((attempt) => attempt.filesTouched ?? [])),
+    },
     modelUsage: {
       callCount: modelCalls.length,
       estimatedCost: Math.round(modelCostTotal * 1000000000) / 1000000000,
@@ -97,6 +104,16 @@ export function formatReportMarkdown(report) {
         )
       : ["- none recorded"]),
     ``,
+    `## Worker Attempts`,
+    `- attempts: ${report.workerSummary?.attemptCount ?? 0}`,
+    `- applied: ${report.workerSummary?.appliedCount ?? 0}`,
+    ...(report.workerAttempts?.length
+      ? report.workerAttempts.map(
+          (attempt) =>
+            `- ${attempt.taskId ?? attempt.task_id}: ${attempt.status} (${(attempt.filesTouched ?? attempt.files_touched ?? []).join(", ") || "no files"})`
+        )
+      : ["- none recorded"]),
+    ``,
     `## Approval`,
     `- status: ${report.approval?.status ?? "unknown"}`,
     `- required: ${report.approval?.required ?? false}`,
@@ -112,6 +129,10 @@ export function formatReportMarkdown(report) {
   ];
 
   return `${lines.join("\n")}\n`;
+}
+
+function unique(values) {
+  return [...new Set(values)].sort();
 }
 
 function formatVerificationMarkdown(verification) {

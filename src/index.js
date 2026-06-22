@@ -32,3 +32,16 @@ export {
   ProviderError,
   resolveProvidersConfig,
 } from "./runtime/providers.js";
+export {
+  applyWorkerPatch,
+  createContextPack,
+  createWorkspaceSnapshot,
+  extractPatchFiles,
+  isAllowedPath,
+  validateWorkerPatch,
+} from "./runtime/workspace.js";
+export {
+  createWorkerPrompt,
+  submitWorkerResult,
+  validateWorkerResult,
+} from "./runtime/worker.js";

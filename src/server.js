@@ -73,6 +73,22 @@ export function createRuntimeHttpServer({
         return sendJson(response, 200, approved);
       }
 
+      const workerResultMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/worker-results$/);
+      if (request.method === "POST" && workerResultMatch) {
+        const body = await readJsonBody(request);
+        const submitted = await callRuntimeTool(
+          "runtime_submit_worker_result",
+          {
+            runId: workerResultMatch[1],
+            taskId: body.taskId,
+            apply: body.apply,
+            result: body.result,
+          },
+          { store, runtimeOptions }
+        );
+        return sendJson(response, 200, submitted);
+      }
+
       if (request.method === "POST" && url.pathname === "/api/verify") {
         const body = await readJsonBody(request);
         const verification = await callRuntimeTool("runtime_verify", body, { store, runtimeOptions });

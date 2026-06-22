@@ -317,14 +317,14 @@ expected_output:
 
 **Tasks:**
 
-- [ ] Implement workspace snapshot summary for a task.
-- [ ] Implement context pack generation from allowed files and referenced files.
-- [ ] Implement worker prompt template that includes task contract, allowed files, forbidden actions, acceptance criteria, and output schema.
-- [ ] Require worker outputs to be structured: patch, explanation, verification notes, confidence, files touched.
-- [ ] Reject patches that touch files outside `allowed_files`.
-- [ ] Reject outputs that do not include required acceptance mapping.
-- [ ] Apply worker patch only after Runtime validation.
-- [ ] Record every worker attempt separately.
+- [x] Implement workspace snapshot summary for a task.
+- [x] Implement context pack generation from allowed files and referenced files.
+- [x] Implement worker prompt template that includes task contract, allowed files, forbidden actions, acceptance criteria, and output schema.
+- [x] Require worker outputs to be structured: patch, explanation, verification notes, confidence, files touched.
+- [x] Reject patches that touch files outside `allowed_files`.
+- [x] Reject outputs that do not include required acceptance mapping.
+- [x] Apply worker patch only after Runtime validation.
+- [x] Record every worker attempt separately.
 
 **Acceptance Criteria:**
 

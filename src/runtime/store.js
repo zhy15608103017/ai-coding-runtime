@@ -113,6 +113,7 @@ export class FileExecutionStore {
         ...routingEvents,
       ],
       modelCalls: [],
+      workerAttempts: [],
       verification: [],
       report: null,
     };
@@ -179,6 +180,42 @@ export class FileExecutionStore {
           model: modelCall.model,
           error: modelCall.error,
         });
+        return record;
+      },
+      { now }
+    );
+  }
+
+  async recordWorkerAttempt(runId, attempt, { now = new Date() } = {}) {
+    return this.updateRecord(
+      runId,
+      (record) => {
+        record.workerAttempts = Array.isArray(record.workerAttempts) ? record.workerAttempts : [];
+        record.workerAttempts.push({
+          timestamp: now.toISOString(),
+          ...attempt,
+        });
+        record.events.push({
+          type: "worker.attempt.recorded",
+          timestamp: now.toISOString(),
+          taskId: attempt.taskId,
+          task_id: attempt.task_id ?? attempt.taskId,
+          status: attempt.status,
+          filesTouched: attempt.filesTouched,
+          files_touched: attempt.files_touched ?? attempt.filesTouched,
+        });
+
+        if (attempt.applied) {
+          record.events.push({
+            type: "worker.patch.applied",
+            timestamp: now.toISOString(),
+            taskId: attempt.taskId,
+            task_id: attempt.task_id ?? attempt.taskId,
+            filesTouched: attempt.filesTouched,
+            files_touched: attempt.files_touched ?? attempt.filesTouched,
+          });
+        }
+
         return record;
       },
       { now }

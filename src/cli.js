@@ -6,6 +6,7 @@ import {
   formatReportMarkdown,
   loadRuntimeConfig,
 } from "./index.js";
+import { readFile } from "node:fs/promises";
 import { startMcpStdioServer } from "./mcp.js";
 import { createRuntimeHttpServer, listen, summarizeRecord } from "./server.js";
 
@@ -24,6 +25,8 @@ export async function runCli(argv, io = process) {
         return await reportCommand(rest, io);
       case "approve":
         return await approveCommand(rest, io);
+      case "worker-result":
+        return await workerResultCommand(rest, io);
       case "provider-health":
         return await providerHealthCommand(rest, io);
       case "generate":
@@ -169,6 +172,45 @@ async function approveCommand(args, io) {
   return 0;
 }
 
+async function workerResultCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const [runId, taskId] = positional;
+
+  if (!runId) {
+    throw new Error("worker-result requires a run id.");
+  }
+
+  if (!taskId) {
+    throw new Error("worker-result requires a task id.");
+  }
+
+  if (!options.fromFile) {
+    throw new Error("worker-result requires --from-file <path>.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const result = JSON.parse(await readFile(options.fromFile, "utf8"));
+  const submitted = await callRuntimeTool(
+    "runtime_submit_worker_result",
+    {
+      runId,
+      taskId,
+      apply: options.apply === true,
+      result,
+    },
+    { store, runtimeOptions: runtimeOptionsFromConfig(config) }
+  );
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify(submitted, null, 2)}\n`);
+  } else {
+    io.stdout.write(`${submitted.runId}: worker result ${submitted.status} for ${submitted.taskId}\n`);
+  }
+
+  return 0;
+}
+
 async function providerHealthCommand(args, io) {
   const { positional, options } = parseArgs(args);
   const [provider] = positional;
@@ -264,6 +306,9 @@ async function mcpCommand(io) {
 
 function runtimeOptionsFromConfig(config) {
   return {
+    workspace: {
+      cwd: process.cwd(),
+    },
     modelRegistry: config.routing.modelRegistry,
     routingPolicy: {
       ...(config.routing.policy ?? {}),
@@ -314,6 +359,11 @@ function parseArgs(args) {
     } else if (arg === "--run-id") {
       options.runId = args[index + 1];
       index += 1;
+    } else if (arg === "--from-file") {
+      options.fromFile = args[index + 1];
+      index += 1;
+    } else if (arg === "--apply") {
+      options.apply = true;
     } else if (arg === "--temperature") {
       options.temperature = args[index + 1];
       index += 1;
@@ -341,6 +391,7 @@ Usage:
   ai-coding-runtime status <run-id> [--json]
   ai-coding-runtime verify <run-id> [--json]
   ai-coding-runtime approve <run-id> [--json]
+  ai-coding-runtime worker-result <run-id> <task-id> --from-file result.json [--apply] [--json]
   ai-coding-runtime report <run-id> [--json|--markdown]
   ai-coding-runtime provider-health [provider] [--json]
   ai-coding-runtime generate "<prompt>" [--provider name] [--model model] [--run-id run-id] [--json]

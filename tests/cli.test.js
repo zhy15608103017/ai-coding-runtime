@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -43,6 +43,67 @@ test("run, status, and report commands use the same file-backed run", async () =
     assert.match(reportResult.stdout, /Budget/);
     assert.match(reportResult.stdout, /Routing Trace/);
     assert.match(reportResult.stdout, /实现 V0 runtime 骨架/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("worker-result command records and applies structured worker output", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-cli-worker-"));
+  const project = path.join(workspace, "project");
+  const runtimeHome = path.join(workspace, "runtime-data");
+
+  try {
+    await writeProjectFile(project, "src/app.js", "export const value = 1;\n");
+
+    const runResult = runCli(
+      ["run", "implement a safe worker patch from cli", "--json"],
+      runtimeHome,
+      project
+    );
+    assert.equal(runResult.status, 0, runResult.stderr);
+    const runOutput = JSON.parse(runResult.stdout);
+    const task = runOutput.plan.tasks.find((candidate) => candidate.task_id === "T-003");
+
+    const approveResult = runCli(["approve", runOutput.runId, "--json"], runtimeHome, project);
+    assert.equal(approveResult.status, 0, approveResult.stderr);
+
+    const resultPath = path.join(project, "worker-result.json");
+    await writeFile(
+      resultPath,
+      JSON.stringify(
+        workerResultForTask(task, {
+          patch: patchFor("src/app.js", "export const value = 1;", "export const value = 2;"),
+        }),
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const workerResult = runCli(
+      [
+        "worker-result",
+        runOutput.runId,
+        task.task_id,
+        "--from-file",
+        resultPath,
+        "--apply",
+        "--json",
+      ],
+      runtimeHome,
+      project
+    );
+    assert.equal(workerResult.status, 0, workerResult.stderr);
+    const submitted = JSON.parse(workerResult.stdout);
+    assert.equal(submitted.status, "applied");
+    assert.deepEqual(submitted.filesTouched, ["src/app.js"]);
+    assert.equal(await readFile(path.join(project, "src/app.js"), "utf8"), "export const value = 2;\n");
+
+    const reportResult = runCli(["report", runOutput.runId, "--markdown"], runtimeHome, project);
+    assert.equal(reportResult.status, 0, reportResult.stderr);
+    assert.match(reportResult.stdout, /Worker Attempts/);
+    assert.match(reportResult.stdout, /src\/app\.js/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -302,4 +363,35 @@ function readFirstStdoutLine(child) {
       }
     });
   });
+}
+
+function workerResultForTask(task, overrides = {}) {
+  return {
+    patch: overrides.patch,
+    explanation: "Updated an allowed implementation file.",
+    verificationNotes: ["Validated through CLI worker-result command."],
+    confidence: 0.8,
+    filesTouched: overrides.filesTouched ?? ["src/app.js"],
+    acceptance: Object.fromEntries(
+      task.acceptance.map((item) => [item, `Evidence for ${item}`])
+    ),
+  };
+}
+
+function patchFor(filePath, before, after) {
+  return [
+    `diff --git a/${filePath} b/${filePath}`,
+    `--- a/${filePath}`,
+    `+++ b/${filePath}`,
+    "@@ -1 +1 @@",
+    `-${before}`,
+    `+${after}`,
+    "",
+  ].join("\n");
+}
+
+async function writeProjectFile(workspace, relativePath, content) {
+  const filePath = path.join(workspace, relativePath);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, content, "utf8");
 }

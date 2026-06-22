@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -183,6 +183,7 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
       "runtime_approve",
       "runtime_provider_health",
       "runtime_model_generate",
+      "runtime_submit_worker_result",
     ]);
 
     const call = await postJson(`${started.httpUrl}/mcp`, {
@@ -230,6 +231,57 @@ test("HTTP gateway exposes provider health and model generation endpoints", asyn
     assert.equal(generated.provider, "local");
     assert.match(generated.text, /hello/);
     assert.equal(generated.costEstimate.estimatedCost, 0);
+  } finally {
+    server.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("HTTP gateway records and applies worker results", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-worker-http-"));
+  const project = path.join(workspace, "project");
+  const store = new FileExecutionStore({ workspace: path.join(workspace, "runtime-data") });
+  const server = createRuntimeHttpServer({
+    store,
+    runtimeOptions: {
+      workspace: { cwd: project },
+    },
+  });
+  const started = await listen(server, { host: "127.0.0.1", port: 0 });
+
+  try {
+    await writeProjectFile(project, "src/app.js", "export const value = 1;\n");
+
+    const runResponse = await postJson(`${started.httpUrl}/api/runs`, {
+      request: "implement a safe worker patch through HTTP",
+    });
+    assert.equal(runResponse.status, 201);
+    const run = await runResponse.json();
+    const task = run.plan.tasks.find((candidate) => candidate.task_id === "T-003");
+
+    const approveResponse = await postJson(`${started.httpUrl}/api/runs/${run.runId}/approve`, {
+      approvedBy: "gateway-worker-test",
+    });
+    assert.equal(approveResponse.status, 200);
+
+    const workerResponse = await postJson(`${started.httpUrl}/api/runs/${run.runId}/worker-results`, {
+      taskId: task.task_id,
+      apply: true,
+      result: workerResultForTask(task, {
+        patch: patchFor("src/app.js", "export const value = 1;", "export const value = 2;"),
+      }),
+    });
+    assert.equal(workerResponse.status, 200);
+    const submitted = await workerResponse.json();
+    assert.equal(submitted.status, "applied");
+    assert.deepEqual(submitted.filesTouched, ["src/app.js"]);
+    assert.equal(await readFile(path.join(project, "src/app.js"), "utf8"), "export const value = 2;\n");
+
+    const reportResponse = await fetch(`${started.httpUrl}/api/runs/${run.runId}/report`);
+    assert.equal(reportResponse.status, 200);
+    const report = await reportResponse.json();
+    assert.equal(report.workerAttempts.length, 1);
+    assert.equal(report.workerSummary.appliedCount, 1);
   } finally {
     server.close();
     await rm(workspace, { recursive: true, force: true });
@@ -329,4 +381,35 @@ function postJson(url, body) {
     },
     body: JSON.stringify(body),
   });
+}
+
+function workerResultForTask(task, overrides = {}) {
+  return {
+    patch: overrides.patch,
+    explanation: "Updated an allowed implementation file.",
+    verificationNotes: ["Validated through HTTP gateway test."],
+    confidence: 0.8,
+    filesTouched: overrides.filesTouched ?? ["src/app.js"],
+    acceptance: Object.fromEntries(
+      task.acceptance.map((item) => [item, `Evidence for ${item}`])
+    ),
+  };
+}
+
+function patchFor(filePath, before, after) {
+  return [
+    `diff --git a/${filePath} b/${filePath}`,
+    `--- a/${filePath}`,
+    `+++ b/${filePath}`,
+    "@@ -1 +1 @@",
+    `-${before}`,
+    `+${after}`,
+    "",
+  ].join("\n");
+}
+
+async function writeProjectFile(workspace, relativePath, content) {
+  const filePath = path.join(workspace, relativePath);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, content, "utf8");
 }

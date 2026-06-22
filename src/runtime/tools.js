@@ -3,6 +3,7 @@ import { checkProviderHealth, generateModelResponse } from "./providers.js";
 import { createReport, formatReportMarkdown } from "./report.js";
 import { RUN_STATUS, canVerifyRun } from "./status.js";
 import { runVerificationCommands } from "./verification.js";
+import { submitWorkerResult } from "./worker.js";
 
 export const RUNTIME_TOOLS = [
   {
@@ -91,6 +92,11 @@ export const RUNTIME_TOOLS = [
     description: "Call a configured model provider through the normalized provider interface.",
     inputSchema: modelGenerateSchema(),
   },
+  {
+    name: "runtime_submit_worker_result",
+    description: "Validate, optionally apply, and record a structured worker result for a task.",
+    inputSchema: workerResultSchema(),
+  },
 ];
 
 export async function callRuntimeTool(name, args, { store, runtimeOptions = {} } = {}) {
@@ -117,6 +123,15 @@ export async function callRuntimeTool(name, args, { store, runtimeOptions = {} }
       return providerHealth(args, runtimeOptions);
     case "runtime_model_generate":
       return modelGenerate(args, store, runtimeOptions);
+    case "runtime_submit_worker_result":
+      return submitWorkerResult({
+        runId: requireRunId(args),
+        taskId: requireTaskId(args),
+        result: args.result,
+        apply: args.apply === true,
+        store,
+        runtimeOptions,
+      });
     default:
       throw new Error(`Unknown runtime tool: ${name}`);
   }
@@ -488,6 +503,14 @@ function requireRunId(args) {
   return args.runId.trim();
 }
 
+function requireTaskId(args) {
+  if (!args?.taskId || typeof args.taskId !== "string" || args.taskId.trim().length === 0) {
+    throw new Error("taskId is required.");
+  }
+
+  return args.taskId.trim();
+}
+
 function requestSchema() {
   return {
     type: "object",
@@ -536,6 +559,48 @@ function modelGenerateSchema() {
       maxTokens: { type: "number" },
       timeoutMs: { type: "number" },
     },
+    additionalProperties: false,
+  };
+}
+
+function workerResultSchema() {
+  return {
+    type: "object",
+    properties: {
+      runId: { type: "string" },
+      taskId: { type: "string" },
+      apply: { type: "boolean" },
+      result: {
+        type: "object",
+        properties: {
+          patch: { type: "string" },
+          explanation: { type: "string" },
+          verificationNotes: {
+            type: "array",
+            items: { type: "string" },
+          },
+          confidence: { type: "number" },
+          filesTouched: {
+            type: "array",
+            items: { type: "string" },
+          },
+          acceptance: {
+            type: "object",
+            additionalProperties: { type: "string" },
+          },
+        },
+        required: [
+          "patch",
+          "explanation",
+          "verificationNotes",
+          "confidence",
+          "filesTouched",
+          "acceptance",
+        ],
+        additionalProperties: false,
+      },
+    },
+    required: ["runId", "taskId", "result"],
     additionalProperties: false,
   };
 }
