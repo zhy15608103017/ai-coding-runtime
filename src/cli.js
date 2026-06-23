@@ -21,6 +21,8 @@ export async function runCli(argv, io = process) {
         return await statusCommand(rest, io);
       case "verify":
         return await verifyCommand(rest, io);
+      case "execute":
+        return await executeCommand(rest, io);
       case "report":
         return await reportCommand(rest, io);
       case "audit":
@@ -125,6 +127,37 @@ async function verifyCommand(args, io) {
   }
 
   return verification.status === "failed" ? 1 : 0;
+}
+
+async function executeCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const [runId] = positional;
+
+  if (!runId) {
+    throw new Error("execute requires a run id.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const executed = await callRuntimeTool(
+    "runtime_execute",
+    {
+      runId,
+      apply: options.noApply === true ? false : true,
+      verify: options.noVerify === true ? false : true,
+    },
+    { store, runtimeOptions: runtimeOptionsFromConfig(config) }
+  );
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify(executed, null, 2)}\n`);
+  } else {
+    io.stdout.write(
+      `${executed.runId}: execute ${executed.status} (${executed.executedTasks.length} executed, ${executed.skippedTasks.length} skipped)\n`
+    );
+  }
+
+  return executed.status === "failed" || executed.status === "verification_failed" ? 1 : 0;
 }
 
 async function reportCommand(args, io) {
@@ -393,6 +426,10 @@ function parseArgs(args) {
       index += 1;
     } else if (arg === "--apply") {
       options.apply = true;
+    } else if (arg === "--no-apply") {
+      options.noApply = true;
+    } else if (arg === "--no-verify") {
+      options.noVerify = true;
     } else if (arg === "--temperature") {
       options.temperature = args[index + 1];
       index += 1;
@@ -418,6 +455,7 @@ Usage:
   ai-coding-runtime mcp
   ai-coding-runtime run "<request>" [--json]
   ai-coding-runtime status <run-id> [--json]
+  ai-coding-runtime execute <run-id> [--no-apply] [--no-verify] [--json]
   ai-coding-runtime verify <run-id> [--json]
   ai-coding-runtime approve <run-id> [--json]
   ai-coding-runtime worker-result <run-id> <task-id> --from-file result.json [--apply] [--json]

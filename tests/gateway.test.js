@@ -102,7 +102,7 @@ test("HTTP gateway exposes estimate, verify, cancel, and report endpoints", asyn
     assert.ok(report.traceViewerData);
     assert.equal(report.exportFormat.schema, "ai-coding-runtime.report");
   } finally {
-    server.close();
+    await closeServer(server);
     await rm(workspace, { recursive: true, force: true });
   }
 });
@@ -150,7 +150,7 @@ test("HTTP gateway passes verification runtime options to runtime_verify", async
     const record = await store.readRecord(run.runId);
     assert.equal(record.status, "verification_passed");
   } finally {
-    server.close();
+    await closeServer(server);
     await rm(workspace, { recursive: true, force: true });
   }
 });
@@ -189,7 +189,36 @@ test("HTTP gateway passes verification request overrides to runtime_verify", asy
     assert.equal(verification.commands.length, 1);
     assert.equal(verification.commands[0].name, "node-version");
   } finally {
-    server.close();
+    await closeServer(server);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("HTTP gateway exposes explicit run execution endpoint", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-http-execute-"));
+  const store = new FileExecutionStore({ workspace });
+  const server = createRuntimeHttpServer({ store });
+  const started = await listen(server, { host: "127.0.0.1", port: 0 });
+
+  try {
+    const runResponse = await postJson(`${started.httpUrl}/api/runs`, {
+      request: "plan only: execute through HTTP without modifying files",
+    });
+    assert.equal(runResponse.status, 201);
+    const run = await runResponse.json();
+
+    const executeResponse = await postJson(`${started.httpUrl}/api/runs/${run.runId}/execute`, {
+      apply: false,
+      verify: false,
+    });
+    assert.equal(executeResponse.status, 200);
+    const executed = await executeResponse.json();
+    assert.equal(executed.runId, run.runId);
+    assert.equal(executed.status, "verification_skipped");
+    assert.equal(executed.executedTasks.length, 0);
+    assert.ok(executed.skippedTasks.length > 0);
+  } finally {
+    await closeServer(server);
     await rm(workspace, { recursive: true, force: true });
   }
 });
@@ -225,12 +254,14 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
     const listed = await list.json();
     const toolNames = listed.result.tools.map((tool) => tool.name);
     const verifyTool = listed.result.tools.find((tool) => tool.name === "runtime_verify");
+    const executeTool = listed.result.tools.find((tool) => tool.name === "runtime_execute");
     assert.deepEqual(toolNames, [
       "runtime_plan",
       "runtime_estimate",
       "runtime_run",
       "runtime_status",
       "runtime_collect",
+      "runtime_execute",
       "runtime_verify",
       "runtime_report",
       "runtime_cancel",
@@ -240,6 +271,8 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
       "runtime_submit_worker_result",
     ]);
     assert.ok(verifyTool.inputSchema.properties.verification);
+    assert.ok(executeTool.inputSchema.properties.apply);
+    assert.ok(executeTool.inputSchema.properties.verify);
 
     const call = await postJson(`${started.httpUrl}/mcp`, {
       jsonrpc: "2.0",
@@ -298,8 +331,40 @@ test("HTTP MCP endpoint lists and calls runtime tools with structured content", 
     const verified = await verifyResponse.json();
     assert.equal(verified.result.structuredContent.status, "passed");
     assert.equal(verified.result.structuredContent.commands[0].name, "node-version");
+
+    const executeRunResponse = await postJson(`${started.httpUrl}/mcp`, {
+      jsonrpc: "2.0",
+      id: 6,
+      method: "tools/call",
+      params: {
+        name: "runtime_run",
+        arguments: {
+          request: "plan only: execute through MCP without file changes",
+        },
+      },
+    });
+    assert.equal(executeRunResponse.status, 200);
+    const executeRun = await executeRunResponse.json();
+
+    const executeResponse = await postJson(`${started.httpUrl}/mcp`, {
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: {
+        name: "runtime_execute",
+        arguments: {
+          runId: executeRun.result.structuredContent.runId,
+          apply: false,
+          verify: false,
+        },
+      },
+    });
+    assert.equal(executeResponse.status, 200);
+    const executed = await executeResponse.json();
+    assert.equal(executed.result.structuredContent.status, "verification_skipped");
+    assert.ok(executed.result.structuredContent.skippedTasks.length > 0);
   } finally {
-    server.close();
+    await closeServer(server);
     await rm(workspace, { recursive: true, force: true });
   }
 });
@@ -328,7 +393,7 @@ test("HTTP gateway exposes provider health and model generation endpoints", asyn
     assert.match(generated.text, /hello/);
     assert.equal(generated.costEstimate.estimatedCost, 0);
   } finally {
-    server.close();
+    await closeServer(server);
     await rm(workspace, { recursive: true, force: true });
   }
 });
@@ -380,7 +445,7 @@ test("HTTP gateway records and applies worker results", async () => {
     assert.equal(report.workerSummary.appliedCount, 1);
     assert.deepEqual(report.changedFiles, ["src/app.js"]);
   } finally {
-    server.close();
+    await closeServer(server);
     await rm(workspace, { recursive: true, force: true });
   }
 });
@@ -432,7 +497,7 @@ test("HTTP gateway applies runtime budget policy to estimates and runs", async (
     assert.equal(mcpRun.id, 7);
     assert.match(mcpRun.error.message, /budget.policy.violation/);
   } finally {
-    server.close();
+    await closeServer(server);
     await rm(workspace, { recursive: true, force: true });
   }
 });
@@ -464,7 +529,7 @@ test("HTTP gateway requires bearer token when configured", async () => {
     const plan = await allowed.json();
     assert.equal(plan.request, "需要鉴权");
   } finally {
-    server.close();
+    await closeServer(server);
     await rm(workspace, { recursive: true, force: true });
   }
 });
@@ -477,6 +542,18 @@ function postJson(url, body) {
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
   });
 }
 

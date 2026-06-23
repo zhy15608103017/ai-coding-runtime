@@ -1,5 +1,6 @@
 import { createRuntimePlan } from "./planner.js";
 import { reviewTaskAcceptance } from "./acceptance.js";
+import { executeRun } from "./execution.js";
 import { checkProviderHealth, generateModelResponse } from "./providers.js";
 import { createReport, formatReportMarkdown } from "./report.js";
 import { RUN_STATUS, canVerifyRun } from "./status.js";
@@ -33,6 +34,11 @@ export const RUNTIME_TOOLS = [
     name: "runtime_collect",
     description: "Collect intermediate artifacts, events, and task outputs for a run.",
     inputSchema: runIdSchema(),
+  },
+  {
+    name: "runtime_execute",
+    description: "Explicitly execute eligible worker tasks for a persisted run.",
+    inputSchema: executeSchema(),
   },
   {
     name: "runtime_verify",
@@ -119,6 +125,17 @@ export async function callRuntimeTool(name, args, { store, runtimeOptions = {} }
       return readStatus(requireRunId(args), store);
     case "runtime_collect":
       return collectRun(requireRunId(args), store);
+    case "runtime_execute":
+      return executeRun({
+        runId: requireRunId(args),
+        apply: args.apply !== false,
+        verify: args.verify !== false,
+        store,
+        runtimeOptions,
+        generate: runtimeOptions.execution?.generate,
+        verifyRun,
+        createReport,
+      });
     case "runtime_verify":
       return verifyRun(requireRunId(args), store, withVerificationOverride(runtimeOptions, args));
     case "runtime_report":
@@ -731,6 +748,19 @@ function verifySchema() {
     properties: {
       runId: { type: "string" },
       verification: { type: "object" },
+    },
+    required: ["runId"],
+    additionalProperties: false,
+  };
+}
+
+function executeSchema() {
+  return {
+    type: "object",
+    properties: {
+      runId: { type: "string" },
+      apply: { type: "boolean" },
+      verify: { type: "boolean" },
     },
     required: ["runId"],
     additionalProperties: false,

@@ -226,6 +226,35 @@ test("provider-health and generate commands use provider adapters", async () => 
   }
 });
 
+test("execute command runs explicit execution loop without verification", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-cli-execute-"));
+
+  try {
+    const runResult = runCli(
+      ["run", "plan only: inspect files without modifying files", "--json"],
+      workspace,
+      workspace
+    );
+    assert.equal(runResult.status, 0, runResult.stderr);
+    const runOutput = JSON.parse(runResult.stdout);
+    assert.equal(runOutput.status, "planned");
+
+    const executeResult = runCli(
+      ["execute", runOutput.runId, "--no-apply", "--no-verify", "--json"],
+      workspace,
+      workspace
+    );
+    assert.equal(executeResult.status, 0, executeResult.stderr);
+    const executed = JSON.parse(executeResult.stdout);
+    assert.equal(executed.runId, runOutput.runId);
+    assert.equal(executed.status, "verification_skipped");
+    assert.equal(executed.executedTasks.length, 0);
+    assert.ok(executed.skippedTasks.length > 0);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("verify command runs configured verification commands", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-cli-verify-"));
 

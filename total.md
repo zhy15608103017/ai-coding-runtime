@@ -547,6 +547,36 @@ safety:
 - Secrets are not included in worker prompts or reports.
 - High-risk actions can require explicit human approval.
 
+## Phase 10.5: Worker Auto Execution Loop
+
+**Objective:** Let the Runtime explicitly execute approved or otherwise executable worker tasks instead of relying only on host-submitted worker results.
+
+**Deliverables:**
+
+- `runtime_execute` tool.
+- CLI `execute` command.
+- HTTP `POST /api/runs/:id/execute` endpoint.
+- MCP exposure through `tools/list` and `tools/call`.
+- Single-pass worker execution loop.
+- Execution trace events.
+
+**Tasks:**
+
+- [x] Keep `runtime_run` plan-only and make worker execution explicit.
+- [x] Refuse `approval_required` runs until they are approved.
+- [x] Skip read-only, final verification, missing-acceptance, and already completed worker tasks.
+- [x] Resolve provider/model from task routing with provider config fallback.
+- [x] Call worker models with a strict structured JSON response contract.
+- [x] Reuse `submitWorkerResult` for validation, optional patch application, and worker attempt recording.
+- [x] Record model calls, execution events, verification result, and report output.
+- [x] Add CLI, HTTP, and MCP coverage.
+
+**Acceptance Criteria:**
+
+- A user can create a run, approve it when needed, execute eligible worker tasks, and receive a report without manually submitting worker output.
+- Existing `runtime_run` behavior remains compatible and does not make hidden file edits.
+- Malformed worker output fails safely and remains traceable.
+
 ## Phase 11: Learning And Optimization
 
 **Objective:** Improve routing decisions over time using real run history.
