@@ -322,10 +322,42 @@ export function createWorkerPrompt({ task = {}, contextPack = {} } = {}) {
     ...(task.acceptance ?? []).map((item) => `- ${item}`),
     "",
     "Context files:",
-    ...(contextPack.files ?? []).map((file) => `- ${file.path} (${file.sizeBytes} bytes)`),
+    ...formatContextFiles(contextPack.files ?? []),
+    "",
+    "Patch requirements:",
+    "- Return a valid unified diff patch.",
+    "- Include diff --git, ---, +++, and at least one hunk header with line numbers like @@ -12,3 +12,4 @@.",
+    "- Do not return placeholder hunk markers such as @@ without line numbers.",
+    "",
+    "Acceptance evidence requirements:",
+    "- The acceptance object must include every acceptance criterion above as an exact key.",
+    "- Do not rename, summarize, omit, or translate acceptance keys.",
+    "- Use this exact acceptance object shape:",
+    JSON.stringify(createAcceptanceEvidenceTemplate(task.acceptance ?? []), null, 2),
     "",
     "Return structured output with patch, explanation, verificationNotes, confidence, filesTouched, and acceptance evidence.",
   ].join("\n");
+}
+
+function createAcceptanceEvidenceTemplate(acceptance = []) {
+  return Object.fromEntries(
+    acceptance
+      .filter((item) => typeof item === "string" && item.length > 0)
+      .map((item) => [item, "evidence for this exact criterion"])
+  );
+}
+
+function formatContextFiles(files = []) {
+  if (!Array.isArray(files) || files.length === 0) {
+    return ["- none"];
+  }
+
+  return files.flatMap((file) => [
+    `- ${file.path} (${file.sizeBytes} bytes${file.truncated ? ", truncated" : ""})`,
+    "```",
+    file.content ?? "",
+    "```",
+  ]);
 }
 
 function createFallbackContextPack({ cwd, task = {} }) {

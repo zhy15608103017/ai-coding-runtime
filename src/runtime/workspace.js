@@ -43,6 +43,7 @@ export async function createContextPack({
     "referenceFiles",
     "reference_files"
   );
+  const contextSelectors = taskContextSelectors(task);
   const contextPatterns = uniqueStrings([...allowedFiles, ...referencedFiles]);
   const policyViolations = [];
   const selectedFiles = snapshot.files.filter((file) => {
@@ -74,13 +75,21 @@ export async function createContextPack({
 
   for (const file of selectedFiles) {
     const absolutePath = path.join(snapshot.cwd, file.path);
-    const content = await readFile(absolutePath, "utf8");
+    const rawContent = await readFile(absolutePath, "utf8");
+    const selected = selectContextContent({
+      filePath: file.path,
+      rawContent,
+      contextSelectors,
+    });
+    const content = selected.content ?? rawContent;
     const truncated = Buffer.byteLength(content, "utf8") > maxBytesPerFile;
     files.push({
       path: file.path,
       sizeBytes: file.sizeBytes,
-      content: truncated ? content.slice(0, maxBytesPerFile) : content,
+      content: truncated ? truncateUtf8(content, maxBytesPerFile) : content,
       truncated,
+      contextSelectionWarning: selected.warning,
+      context_selection_warning: selected.warning,
     });
   }
 
@@ -92,6 +101,38 @@ export async function createContextPack({
     totalFiles: files.length,
     files,
   };
+}
+
+function selectContextContent({ filePath, rawContent, contextSelectors }) {
+  const selectors = contextSelectors[filePath];
+  if (!Array.isArray(selectors) || selectors.length === 0) {
+    return { content: null, warning: null };
+  }
+
+  try {
+    const parsed = JSON.parse(rawContent);
+    const subset = pickJsonSelectors(parsed, selectors);
+    if (!subset || Object.keys(subset).length === 0) {
+      return {
+        content: "{}",
+        warning: `No configured context selectors matched ${filePath}.`,
+      };
+    }
+
+    return {
+      content: JSON.stringify(subset, null, 2),
+      warning: null,
+    };
+  } catch {
+    return {
+      content: "{}",
+      warning: `Could not parse ${filePath} as JSON for context selection.`,
+    };
+  }
+}
+
+function truncateUtf8(content, maxBytes) {
+  return Buffer.from(content, "utf8").subarray(0, maxBytes).toString("utf8");
 }
 
 export function validateWorkerPatch({ patch, task = {}, policy = null } = {}) {
@@ -352,6 +393,67 @@ function parsePatchSections(patch) {
   if (current) sections.push(current);
 
   return sections.filter((section) => section.filePath && section.hunks.length > 0);
+}
+
+function taskContextSelectors(task = {}) {
+  const selectors = task.contextSelectors ?? task.context_selectors ?? {};
+  if (!selectors || typeof selectors !== "object" || Array.isArray(selectors)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(selectors)
+      .filter(([, value]) => Array.isArray(value) && value.length > 0)
+      .map(([filePath, value]) => [
+        filePath,
+        value.filter((item) => typeof item === "string" && item.length > 0),
+      ])
+  );
+}
+
+function pickJsonSelectors(source, selectors) {
+  const subset = {};
+
+  for (const selector of selectors) {
+    const parts = String(selector)
+      .split(".")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const value = getNestedValue(source, parts);
+    if (value === undefined) {
+      continue;
+    }
+
+    setNestedValue(subset, parts, value);
+  }
+
+  return subset;
+}
+
+function getNestedValue(source, parts) {
+  let current = source;
+
+  for (const part of parts) {
+    if (!current || typeof current !== "object" || !(part in current)) {
+      return undefined;
+    }
+    current = current[part];
+  }
+
+  return current;
+}
+
+function setNestedValue(target, parts, value) {
+  let current = target;
+
+  for (const part of parts.slice(0, -1)) {
+    if (!current[part] || typeof current[part] !== "object" || Array.isArray(current[part])) {
+      current[part] = {};
+    }
+    current = current[part];
+  }
+
+  current[parts.at(-1)] = value;
 }
 
 function applyHunksToContent(content, hunks) {

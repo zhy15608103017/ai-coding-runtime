@@ -3,3 +3,5 @@
 .env
 .codegraph
 .ai-reviewignore
+runtime.config.json
+.ai-coding-runtime

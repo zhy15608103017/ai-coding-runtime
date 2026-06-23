@@ -8,6 +8,7 @@ import {
   callRuntimeTool,
   createContextPack,
   createReport,
+  createWorkerPrompt,
   createWorkspaceSnapshot,
   FileExecutionStore,
   validateWorkerPatch,
@@ -51,6 +52,74 @@ test("workspace snapshot and context pack respect task allowlists", async () => 
       "/secret.env",
       "C:/secret.env",
     ]);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("context pack can trim JSON referenced files to selected sections", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-worker-json-context-"));
+
+  try {
+    await writeProjectFile(
+      workspace,
+      "runtime.config.json",
+      JSON.stringify(
+        {
+          server: { host: "127.0.0.1" },
+          providers: {
+            entries: {
+              "openai-compatible": {
+                defaultModel: "gpt-config-default",
+                baseUrl: "https://example.test/v1",
+              },
+            },
+          },
+          verification: {
+            final_review: {
+              model: "gpt-config-final",
+              provider: "openai-compatible",
+            },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const contextPack = await createContextPack({
+      cwd: workspace,
+      task: {
+        task_id: "T-json",
+        referenced_files: ["runtime.config.json"],
+        context_selectors: {
+          "runtime.config.json": [
+            "providers.entries.openai-compatible.defaultModel",
+            "verification.final_review.model",
+          ],
+        },
+      },
+    });
+
+    assert.equal(contextPack.files.length, 1);
+    const [configFile] = contextPack.files;
+    const parsed = JSON.parse(configFile.content);
+    assert.deepEqual(parsed, {
+      providers: {
+        entries: {
+          "openai-compatible": {
+            defaultModel: "gpt-config-default",
+          },
+        },
+      },
+      verification: {
+        final_review: {
+          model: "gpt-config-final",
+        },
+      },
+    });
+    assert.doesNotMatch(configFile.content, /server/);
+    assert.doesNotMatch(configFile.content, /baseUrl/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -105,6 +174,35 @@ test("worker patch validation rejects files outside the task contract", () => {
 
   assert.equal(malformed.valid, false);
   assert.ok(malformed.errors.some((error) => error.code === "worker.patch.malformed"));
+});
+
+test("worker prompt requires valid unified diff hunk headers", () => {
+  const prompt = createWorkerPrompt({
+    task: {
+      task_id: "T-003",
+      title: "Implement focused runtime config test",
+      goal: "Add a focused test without touching other files.",
+      allowed_files: ["tests/runtime.test.js"],
+      referenced_files: ["runtime.config.json"],
+      forbidden_actions: ["edit files outside the approved allowlist"],
+      acceptance: ["patch is valid unified diff"],
+    },
+    contextPack: {
+      files: [
+        {
+          path: "tests/runtime.test.js",
+          sizeBytes: 128,
+          truncated: false,
+          content: "test('example', () => {});\n",
+        },
+      ],
+    },
+  });
+
+  assert.match(prompt, /valid unified diff/i);
+  assert.match(prompt, /@@ -\d+(,\d+)? \+\d+(,\d+)? @@/);
+  assert.match(prompt, /The acceptance object must include every acceptance criterion/);
+  assert.match(prompt, /"patch is valid unified diff"/);
 });
 
 test("runtime_submit_worker_result records structured worker attempts", async () => {

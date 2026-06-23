@@ -377,6 +377,7 @@ function runtimeOptionsFromConfig(config) {
     policyExplicit: config.policyExplicit,
     policyValidation: config.policyValidation,
     providers: config.providers,
+    execution: config.execution,
     verification: config.verification,
   };
 }

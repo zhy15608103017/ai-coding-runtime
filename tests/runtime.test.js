@@ -299,6 +299,133 @@ test("createRuntimePlan keeps implementation requests with behavior constraints 
   assert.ok(plan.tasks.some((task) => task.risk === "medium" || task.risk === "high"));
 });
 
+
+test("createRuntimePlan narrows doc-only task scopes to requested documentation files", () => {
+  const plan = createRuntimePlan({
+    request:
+      "Check README.md and docs/integrations.md for runtime_execute consistency. If they differ, make the smallest wording fix. Do not modify src/ code.",
+  });
+
+  const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+  const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+  assert.ok(implementationTask);
+  assert.ok(verificationTask);
+  assert.deepEqual(implementationTask.allowed_files, ["README.md", "docs/integrations.md"]);
+  assert.deepEqual(verificationTask.allowed_files, ["README.md", "docs/integrations.md"]);
+  assert.ok(!implementationTask.allowed_files.includes("src/**"));
+  assert.ok(!verificationTask.allowed_files.includes("tests/**"));
+});
+
+test("createRuntimePlan keeps implementation scope when implementation also mentions docs", () => {
+  const plan = createRuntimePlan({
+    request: "Implement login rate limiting and update README.md usage notes.",
+  });
+
+  const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+  const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+  assert.ok(implementationTask);
+  assert.ok(verificationTask);
+  assert.deepEqual(implementationTask.allowed_files, ["src/**", "tests/**"]);
+  assert.deepEqual(verificationTask.allowed_files, ["tests/**", "package.json"]);
+});
+
+test("createRuntimePlan narrows tests-only task scopes and keeps config files read-only", () => {
+  const plan = createRuntimePlan({
+    request:
+      "Add one focused test for runtime config so openai-compatible defaultModel and final_review model are read from runtime.config.json. Only modify tests/ files and keep current behavior unchanged.",
+  });
+
+  const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+  const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+  assert.ok(implementationTask);
+  assert.ok(verificationTask);
+  assert.deepEqual(implementationTask.allowed_files, ["tests/providers.test.js"]);
+  assert.deepEqual(verificationTask.allowed_files, ["tests/providers.test.js"]);
+  assert.deepEqual(implementationTask.referencedFiles, ["runtime.config.json"]);
+  assert.deepEqual(verificationTask.referencedFiles, ["runtime.config.json"]);
+  assert.deepEqual(implementationTask.contextSelectors, {
+    "runtime.config.json": [
+      "providers.entries.openai-compatible.defaultModel",
+      "verification.final_review.model",
+    ],
+  });
+  assert.deepEqual(verificationTask.contextSelectors, {
+    "runtime.config.json": [
+      "providers.entries.openai-compatible.defaultModel",
+      "verification.final_review.model",
+    ],
+  });
+  assert.ok(
+    implementationTask.acceptance.includes(
+      'focused test verifies config.providers.entries["openai-compatible"].defaultModel is read from runtime.config.json'
+    )
+  );
+  assert.ok(
+    implementationTask.acceptance.includes(
+      "focused test verifies config.verification.final_review.model is read from runtime.config.json"
+    )
+  );
+  assert.ok(
+    verificationTask.acceptance.includes(
+      'focused test verifies config.providers.entries["openai-compatible"].defaultModel is read from runtime.config.json'
+    )
+  );
+  assert.ok(
+    verificationTask.acceptance.includes(
+      "focused test verifies config.verification.final_review.model is read from runtime.config.json"
+    )
+  );
+  assert.ok(!implementationTask.allowed_files.includes("src/**"));
+  assert.ok(!verificationTask.allowed_files.includes("tests/**"));
+});
+
+test("createRuntimePlan keeps implementation scope when a request only mentions adding tests", () => {
+  const plan = createRuntimePlan({
+    request:
+      "Implement login rate limiting and add unit tests for the new behavior.",
+  });
+
+  const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+  const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+  assert.ok(implementationTask);
+  assert.ok(verificationTask);
+  assert.deepEqual(implementationTask.allowed_files, ["src/**", "tests/**"]);
+  assert.deepEqual(verificationTask.allowed_files, ["tests/**", "package.json"]);
+});
+
+test("createRuntimePlan keeps implementation scope when a request asks to add a focused test", () => {
+  const plan = createRuntimePlan({
+    request:
+      "Implement login rate limiting and add a focused test for the new behavior.",
+  });
+
+  const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+  const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+  assert.ok(implementationTask);
+  assert.ok(verificationTask);
+  assert.deepEqual(implementationTask.allowed_files, ["src/**", "tests/**"]);
+  assert.deepEqual(verificationTask.allowed_files, ["tests/**", "package.json"]);
+});
+
+test("createRuntimePlan keeps implementation scope for Chinese requests that ask to add tests", () => {
+  const plan = createRuntimePlan({
+    request:
+      "\u4e3a login \u6a21\u5757\u589e\u52a0 rate limit \u903b\u8f91\uff0c\u5e76\u8865\u5145\u6d4b\u8bd5\u548c\u6700\u7ec8\u9a8c\u8bc1\u3002",
+  });
+
+  const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+  const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+  assert.ok(implementationTask);
+  assert.ok(verificationTask);
+  assert.deepEqual(implementationTask.allowed_files, ["src/**", "tests/**"]);
+  assert.deepEqual(verificationTask.allowed_files, ["tests/**", "package.json"]);
+});
 test("routeTask escalates high risk and hard-to-verify work", () => {
   assert.equal(
     routeTask({
@@ -1695,6 +1822,10 @@ test("loadRuntimeConfig merges defaults, config file, and environment overrides"
           routing: {
             finalVerificationTier: "premium",
           },
+          execution: {
+            maxContextBytesPerFile: 8192,
+            workerTimeoutMs: 150000,
+          },
         },
         null,
         2
@@ -1717,6 +1848,8 @@ test("loadRuntimeConfig merges defaults, config file, and environment overrides"
     assert.equal(config.routing.budgetPolicy.maxCallsPerRun, 20);
     assert.equal(config.routing.budgetPolicy.maxRetryCount, 8);
     assert.equal(config.routing.modelRegistry.length, 3);
+    assert.equal(config.execution.maxContextBytesPerFile, 8192);
+    assert.equal(config.execution.workerTimeoutMs, 150000);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

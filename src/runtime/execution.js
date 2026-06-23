@@ -1,4 +1,5 @@
-import { generateModelResponse } from "./providers.js";
+import { createContextPack } from "./workspace.js";
+import { DEFAULT_PROVIDER_RETRY_POLICY, generateModelResponse } from "./providers.js";
 import { createReport as defaultCreateReport } from "./report.js";
 import { RUN_STATUS } from "./status.js";
 import { redactSecrets } from "./policy.js";
@@ -220,7 +221,23 @@ export function skipReasonForTask(task, workerAttempts = []) {
 }
 
 async function generateWorkerResponse({ task, modelSelection, generate, runtimeOptions }) {
-  const prompt = redactSecrets(createStrictWorkerPrompt(task), runtimeOptions.policy);
+  const cwd = runtimeOptions.workspace?.cwd ?? process.cwd();
+  const maxContextBytesPerFile =
+    runtimeOptions.execution?.maxContextBytesPerFile ??
+    runtimeOptions.execution?.max_context_bytes_per_file ??
+    16 * 1024;
+  const workerTimeoutMs =
+    runtimeOptions.execution?.workerTimeoutMs ??
+    runtimeOptions.execution?.worker_timeout_ms ??
+    runtimeOptions.providers?.retryPolicy?.timeoutMs ??
+    DEFAULT_PROVIDER_RETRY_POLICY.timeoutMs;
+  const contextPack = await createContextPack({
+    cwd,
+    task,
+    policy: runtimeOptions.policy,
+    maxBytesPerFile: maxContextBytesPerFile,
+  });
+  const prompt = redactSecrets(createStrictWorkerPrompt(task, contextPack), runtimeOptions.policy);
   const messages = redactSecrets(
     [
       {
@@ -235,20 +252,23 @@ async function generateWorkerResponse({ task, modelSelection, generate, runtimeO
     runtimeOptions.policy
   );
 
-  return generate(
-    {
-      provider: modelSelection.provider,
-      model: modelSelection.model,
-      messages,
-      responseSchema: workerResponseSchema(),
-    },
-    { providers: runtimeOptions.providers }
-  );
+  const request = {
+    provider: modelSelection.provider,
+    model: modelSelection.model,
+    messages,
+    timeoutMs: workerTimeoutMs,
+  };
+
+  if (shouldUseWorkerResponseSchema(modelSelection, runtimeOptions)) {
+    request.responseSchema = workerResponseSchema();
+  }
+
+  return generate(request, { providers: runtimeOptions.providers });
 }
 
-function createStrictWorkerPrompt(task) {
+function createStrictWorkerPrompt(task, contextPack) {
   return [
-    createWorkerPrompt({ task }),
+    createWorkerPrompt({ task, contextPack }),
     "",
     "Return only a JSON object matching this shape:",
     JSON.stringify(
@@ -288,6 +308,27 @@ function resolveTaskModel(task, runtimeOptions = {}) {
   return { provider, model };
 }
 
+function shouldUseWorkerResponseSchema(modelSelection, runtimeOptions = {}) {
+  const provider = modelSelection?.provider;
+  const providerConfig = runtimeOptions.providers?.entries?.[provider];
+  const providerType = providerConfig?.type ?? provider;
+  const executionSchemaSetting =
+    runtimeOptions.execution?.workerResponseSchema ??
+    runtimeOptions.execution?.worker_response_schema;
+  const providerSchemaSetting =
+    providerConfig?.workerResponseSchema ??
+    providerConfig?.worker_response_schema;
+
+  if (typeof executionSchemaSetting === "boolean") {
+    return executionSchemaSetting;
+  }
+
+  if (typeof providerSchemaSetting === "boolean") {
+    return providerSchemaSetting;
+  }
+
+  return providerType !== "openai-compatible";
+}
 function parseWorkerOutput(response) {
   const structured = response?.structuredOutput ?? response?.structured_output;
   if (isPlainObject(structured)) {

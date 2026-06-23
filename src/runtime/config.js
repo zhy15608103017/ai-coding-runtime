@@ -20,6 +20,10 @@ export const DEFAULT_RUNTIME_CONFIG = {
   storage: {
     directory: ".ai-coding-runtime",
   },
+  execution: {
+    maxContextBytesPerFile: 16 * 1024,
+    workerTimeoutMs: 120000,
+  },
   routing: {
     modelTiers: ["cheap", "standard", "premium"],
     finalVerificationTier: "premium",

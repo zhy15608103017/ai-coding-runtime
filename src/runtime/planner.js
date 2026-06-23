@@ -274,6 +274,8 @@ function createReadOnlyTaskDrafts(request) {
 }
 
 function createImplementationTaskDrafts(request) {
+  const taskScope = deriveImplementationTaskScope(request);
+
   return [
     {
       id: "T-001",
@@ -318,7 +320,9 @@ function createImplementationTaskDrafts(request) {
       contextNeed: "medium",
       verification: "medium",
       dependsOn: ["T-002"],
-      allowedFiles: ["src/**", "tests/**"],
+      allowedFiles: taskScope.implementationAllowedFiles,
+      referencedFiles: taskScope.referencedFiles,
+      contextSelectors: taskScope.contextSelectors,
       forbiddenActions: [
         "edit files outside the approved allowlist",
         "perform destructive filesystem operations",
@@ -326,6 +330,7 @@ function createImplementationTaskDrafts(request) {
       acceptance: [
         "implementation matches the approved task contract",
         "changed files remain inside the allowlist",
+        ...taskScope.acceptance,
       ],
       expectedOutput: ["patch", "implementation notes", "files touched"],
     },
@@ -338,11 +343,14 @@ function createImplementationTaskDrafts(request) {
       contextNeed: "medium",
       verification: "easy",
       dependsOn: ["T-003"],
-      allowedFiles: ["tests/**", "package.json"],
+      allowedFiles: taskScope.verificationAllowedFiles,
+      referencedFiles: taskScope.referencedFiles,
+      contextSelectors: taskScope.contextSelectors,
       forbiddenActions: ["weaken existing assertions", "remove existing tests"],
       acceptance: [
         "verification command is recorded",
         "new behavior has test coverage when code changes are made",
+        ...taskScope.acceptance,
       ],
       expectedOutput: ["test patch", "verification command"],
     },
@@ -382,6 +390,198 @@ function createImplementationTaskDrafts(request) {
       expectedOutput: ["final report", "risk notes", "follow-up recommendations"],
     },
   ];
+}
+
+function deriveImplementationTaskScope(request) {
+  const normalized = request.toLowerCase();
+  const mentionedPaths = extractMentionedPaths(request);
+  const mentionedFiles = mentionedPaths.filter((entry) => !entry.endsWith("/"));
+  const documentationFiles = mentionedFiles.filter(isDocumentationPath);
+
+  if (isTestsOnlyRequest(normalized)) {
+    const focusedTestFiles = deriveFocusedTestFiles(normalized, mentionedFiles);
+    const referencedFiles = uniqueStrings([
+      ...mentionedFiles.filter((entry) => !isTestPath(entry)),
+      ...(normalized.includes("runtime config") ? ["runtime.config.json"] : []),
+    ]);
+
+    return {
+      implementationAllowedFiles: focusedTestFiles,
+      verificationAllowedFiles: focusedTestFiles,
+      referencedFiles,
+      contextSelectors: createReferencedContextSelectors(normalized, referencedFiles),
+      acceptance: createFocusedTestAcceptance(normalized, referencedFiles),
+    };
+  }
+
+  if (documentationFiles.length > 0 && isDocumentationOnlyRequest(normalized)) {
+    return {
+      implementationAllowedFiles: documentationFiles,
+      verificationAllowedFiles: documentationFiles,
+      referencedFiles: [],
+      contextSelectors: {},
+      acceptance: [],
+    };
+  }
+
+  return {
+    implementationAllowedFiles: ["src/**", "tests/**"],
+    verificationAllowedFiles: ["tests/**", "package.json"],
+    referencedFiles: [],
+    contextSelectors: {},
+    acceptance: [],
+  };
+}
+
+function deriveFocusedTestFiles(normalized, mentionedFiles) {
+  const explicitTestFiles = mentionedFiles.filter(
+    (entry) => isTestPath(entry) && entry !== "tests/"
+  );
+  if (explicitTestFiles.length > 0) {
+    return explicitTestFiles;
+  }
+
+  if (
+    includesAny(normalized, [
+      "runtime config",
+      "runtime.config.json",
+      "defaultmodel",
+      "final_review model",
+      "final review model",
+      "openai-compatible provider",
+      "\u8fd0\u884c\u65f6\u914d\u7f6e",
+      "\u914d\u7f6e\u8bfb\u53d6",
+    ])
+  ) {
+    return ["tests/providers.test.js"];
+  }
+
+  return ["tests/**"];
+}
+
+function createReferencedContextSelectors(normalized, referencedFiles) {
+  const selectors = {};
+
+  if (
+    referencedFiles.includes("runtime.config.json") &&
+    includesAny(normalized, [
+      "runtime config",
+      "runtime.config.json",
+      "defaultmodel",
+      "final_review model",
+      "final review model",
+      "openai-compatible provider",
+      "\u8fd0\u884c\u65f6\u914d\u7f6e",
+      "\u914d\u7f6e\u8bfb\u53d6",
+    ])
+  ) {
+    selectors["runtime.config.json"] = [
+      "providers.entries.openai-compatible.defaultModel",
+      "verification.final_review.model",
+    ];
+  }
+
+  return selectors;
+}
+
+function createFocusedTestAcceptance(normalized, referencedFiles) {
+  if (
+    referencedFiles.includes("runtime.config.json") &&
+    includesAny(normalized, [
+      "runtime config",
+      "runtime.config.json",
+      "defaultmodel",
+      "final_review model",
+      "final review model",
+      "openai-compatible provider",
+      "\u8fd0\u884c\u65f6\u914d\u7f6e",
+      "\u914d\u7f6e\u8bfb\u53d6",
+    ])
+  ) {
+    return [
+      "focused test verifies config.providers.entries[\"openai-compatible\"].defaultModel is read from runtime.config.json",
+      "focused test verifies config.verification.final_review.model is read from runtime.config.json",
+    ];
+  }
+
+  return [];
+}
+
+function isDocumentationOnlyRequest(normalized) {
+  return includesAny(normalized, [
+    "documentation only",
+    "docs only",
+    "only documentation",
+    "only modify docs",
+    "only edit docs",
+    "do not modify src/",
+    "do not modify src",
+    "do not change src/",
+    "without modifying src",
+    "wording fix",
+    "smallest wording",
+    "\u4e0d\u8981\u4fee\u6539 src/",
+    "\u4e0d\u8981\u4fee\u6539 src",
+    "\u4e0d\u4fee\u6539 src/",
+    "\u4ec5\u4fee\u6539\u6587\u6863",
+    "\u4ec5\u6539\u6587\u6863",
+    "\u53ea\u4fee\u6539\u6587\u6863",
+    "\u53ea\u6539\u6587\u6863",
+  ]);
+}
+
+function isTestsOnlyRequest(normalized) {
+  return includesAny(normalized, [
+    "only modify tests/",
+    "only modify test",
+    "tests only",
+    "test-only",
+    "only edit tests/",
+    "\u53ea\u4fee\u6539 tests/",
+    "\u53ea\u6539 tests/",
+    "\u53ea\u4fee\u6539\u6d4b\u8bd5",
+    "\u53ea\u6539\u6d4b\u8bd5",
+    "\u4ec5\u4fee\u6539\u6d4b\u8bd5",
+    "\u4ec5\u6539\u6d4b\u8bd5",
+  ]);
+}
+
+function extractMentionedPaths(request) {
+  const matches = request.match(
+    /(?:README\.md|package\.json|runtime\.config\.json|docs\/[A-Za-z0-9._/-]+|src\/[A-Za-z0-9._/-]*|tests\/[A-Za-z0-9._/-]*)/gi
+  );
+
+  if (!matches) {
+    return [];
+  }
+
+  return uniqueStrings(matches.map(normalizeMentionedPath).filter(Boolean));
+}
+
+function normalizeMentionedPath(entry) {
+  const normalized = String(entry).replace(/[),.;:!?]+$/g, "");
+
+  if (normalized === "src/" || normalized === "tests/" || normalized === "docs/") {
+    return normalized;
+  }
+
+  return normalized;
+}
+
+function isDocumentationPath(entry) {
+  return entry === "README.md" || entry.startsWith("docs/") || entry.endsWith(".md");
+}
+
+function isTestPath(entry) {
+  return entry === "tests/" || entry.startsWith("tests/");
+}
+
+function includesAny(value, markers) {
+  return markers.some((marker) => value.includes(marker));
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))];
 }
 
 function isReadOnlyPlanningRequest(request) {

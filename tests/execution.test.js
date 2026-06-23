@@ -112,6 +112,142 @@ test("executeRun executes an eligible task once and records model and worker tra
   }
 });
 
+
+test("executeRun includes allowed file contents in the worker prompt", async () => {
+  const fixture = await createFixture("prompt-context");
+  try {
+    await writeFile(join(fixture.cwd, "src", "app.js"), "export const value = 1;\nexport const label = \"ready\";\n", "utf8");
+    const record = await createRunWithTasks(fixture.store, [taskContract("T-001")]);
+    let receivedPrompt = "";
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: { workspace: { cwd: fixture.cwd } },
+      generate: async (request) => {
+        receivedPrompt = request.messages.map((message) => message.content).join("\n");
+        return modelResponse(request, {
+          patch: patchFor("src/app.js", "export const value = 1;", "export const value = 2;"),
+        });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.match(receivedPrompt, /src\/app\.js/);
+    assert.match(receivedPrompt, /export const label = "ready";/);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("executeRun truncates large worker context files before prompting the model", async () => {
+  const fixture = await createFixture("prompt-context-truncate");
+  try {
+    const largeContent = `export const value = 1;\n${"A".repeat(20000)}\nTAIL_MARKER_SHOULD_NOT_APPEAR\n`;
+    await writeFile(join(fixture.cwd, "src", "app.js"), largeContent, "utf8");
+    const record = await createRunWithTasks(fixture.store, [taskContract("T-001")]);
+    let receivedPrompt = "";
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: {
+        workspace: { cwd: fixture.cwd },
+        execution: { maxContextBytesPerFile: 4096 },
+      },
+      generate: async (request) => {
+        receivedPrompt = request.messages.map((message) => message.content).join("\n");
+        return modelResponse(request, {
+          patch: patchFor("src/app.js", "export const value = 1;", "export const value = 2;"),
+        });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.doesNotMatch(receivedPrompt, /TAIL_MARKER_SHOULD_NOT_APPEAR/);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("executeRun applies task context selectors to referenced JSON files", async () => {
+  const fixture = await createFixture("prompt-context-selectors");
+  try {
+    await writeFile(join(fixture.cwd, "src", "app.js"), "export const value = 1;\n", "utf8");
+    await writeFile(
+      join(fixture.cwd, "runtime.config.json"),
+      JSON.stringify(
+        {
+          server: { host: "127.0.0.1" },
+          providers: {
+            entries: {
+              "openai-compatible": {
+                defaultModel: "gpt-config-default",
+                baseUrl: "https://example.test/v1",
+              },
+            },
+          },
+          verification: {
+            final_review: {
+              model: "gpt-config-final",
+              provider: "openai-compatible",
+            },
+          },
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+    const record = await createRunWithTasks(fixture.store, [
+      taskContract("T-001", {
+        referenced_files: ["runtime.config.json"],
+        referencedFiles: ["runtime.config.json"],
+        context_selectors: {
+          "runtime.config.json": [
+            "providers.entries.openai-compatible.defaultModel",
+            "verification.final_review.model",
+          ],
+        },
+        contextSelectors: {
+          "runtime.config.json": [
+            "providers.entries.openai-compatible.defaultModel",
+            "verification.final_review.model",
+          ],
+        },
+      }),
+    ]);
+    let receivedPrompt = "";
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: { workspace: { cwd: fixture.cwd } },
+      generate: async (request) => {
+        receivedPrompt = request.messages.map((message) => message.content).join("\n");
+        return modelResponse(request, {
+          patch: patchFor("src/app.js", "export const value = 1;", "export const value = 2;"),
+        });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.match(receivedPrompt, /runtime\.config\.json/);
+    assert.match(receivedPrompt, /gpt-config-default/);
+    assert.match(receivedPrompt, /gpt-config-final/);
+    assert.doesNotMatch(receivedPrompt, /127\.0\.0\.1/);
+    assert.doesNotMatch(receivedPrompt, /example\.test/);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test("executeRun redacts worker prompts before calling providers", async () => {
   const fixture = await createFixture("redacts-prompt");
   try {
@@ -146,6 +282,136 @@ test("executeRun redacts worker prompts before calling providers", async () => {
 
     assert.doesNotMatch(receivedPrompt, /super-secret-token/);
     assert.match(receivedPrompt, /apiKey=\[REDACTED\]/);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+
+test("executeRun omits structured response schema for openai-compatible worker requests", async () => {
+  const fixture = await createFixture("openai-compatible-schema");
+  try {
+    await writeFile(join(fixture.cwd, "src", "app.js"), "export const value = 1;\n", "utf8");
+    const record = await createRunWithTasks(fixture.store, [
+      taskContract("T-001", {
+        routing: {
+          selected_model: { provider: "openai-compatible", model: "gpt-5.4-mini" },
+          selectedModel: { provider: "openai-compatible", model: "gpt-5.4-mini" },
+        },
+      }),
+    ]);
+    let receivedRequest = null;
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: {
+        workspace: { cwd: fixture.cwd },
+        providers: {
+          defaultProvider: "openai-compatible",
+          entries: {
+            "openai-compatible": {
+              type: "openai-compatible",
+              defaultModel: "gpt-5.4-mini",
+            },
+          },
+        },
+      },
+      generate: async (request) => {
+        receivedRequest = request;
+        return modelResponse(request, {
+          patch: patchFor("src/app.js", "export const value = 1;", "export const value = 2;"),
+        });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.ok(receivedRequest);
+    assert.equal(receivedRequest.provider, "openai-compatible");
+    assert.equal(receivedRequest.responseSchema, undefined);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("executeRun allows openai-compatible worker response schema opt-in", async () => {
+  const fixture = await createFixture("openai-compatible-schema-opt-in");
+  try {
+    await writeFile(join(fixture.cwd, "src", "app.js"), "export const value = 1;\n", "utf8");
+    const record = await createRunWithTasks(fixture.store, [
+      taskContract("T-001", {
+        routing: {
+          selected_model: { provider: "openai-compatible", model: "gpt-5.4-mini" },
+          selectedModel: { provider: "openai-compatible", model: "gpt-5.4-mini" },
+        },
+      }),
+    ]);
+    let receivedRequest = null;
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: {
+        workspace: { cwd: fixture.cwd },
+        providers: {
+          defaultProvider: "openai-compatible",
+          entries: {
+            "openai-compatible": {
+              type: "openai-compatible",
+              defaultModel: "gpt-5.4-mini",
+              workerResponseSchema: true,
+            },
+          },
+        },
+      },
+      generate: async (request) => {
+        receivedRequest = request;
+        return modelResponse(request, {
+          patch: patchFor("src/app.js", "export const value = 1;", "export const value = 2;"),
+        });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.ok(receivedRequest);
+    assert.equal(receivedRequest.provider, "openai-compatible");
+    assert.equal(receivedRequest.responseSchema.type, "object");
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("executeRun forwards worker timeout overrides to provider requests", async () => {
+  const fixture = await createFixture("worker-timeout");
+  try {
+    await writeFile(join(fixture.cwd, "src", "app.js"), "export const value = 1;\n", "utf8");
+    const record = await createRunWithTasks(fixture.store, [taskContract("T-001")]);
+    let receivedRequest = null;
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: {
+        workspace: { cwd: fixture.cwd },
+        execution: { workerTimeoutMs: 123456 },
+      },
+      generate: async (request) => {
+        receivedRequest = request;
+        return modelResponse(request, {
+          patch: patchFor("src/app.js", "export const value = 1;", "export const value = 2;"),
+        });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.ok(receivedRequest);
+    assert.equal(receivedRequest.timeoutMs, 123456);
   } finally {
     await fixture.cleanup();
   }
