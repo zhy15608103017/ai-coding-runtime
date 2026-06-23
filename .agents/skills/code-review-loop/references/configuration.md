@@ -117,14 +117,21 @@ AI_REVIEW_SECOND_CONFIDENCE_THRESHOLD=0.8
 
 `auto` 模式下，主模型返回的 P0/P1/P2 数量达到阈值，或主审 `confidence` 小于 `AI_REVIEW_SECOND_CONFIDENCE_THRESHOLD`，都会触发二审。默认置信度阈值是 `0.8`。
 
-二审模型使用独立的默认请求预算：
+二审模型默认继承主审当前已生效的请求预算，包括 `high-accuracy` profile、`--timeout-ms`、`--retries` 或对应环境变量带来的覆盖。
+
+也就是说：
+
+- 如果主审因为 `high-accuracy` 使用了更长超时，二审默认也会继承这组预算。
+- 如果显式设置了 `--second-timeout-ms` / `AI_REVIEW_SECOND_TIMEOUT_MS` 或 `--second-retries` / `AI_REVIEW_SECOND_RETRIES`，则二审使用自己的独立值。
+
+例如可以单独给二审更长预算：
 
 ```env
-AI_REVIEW_SECOND_TIMEOUT_MS=60000
-AI_REVIEW_SECOND_RETRIES=0
+AI_REVIEW_SECOND_TIMEOUT_MS=180000
+AI_REVIEW_SECOND_RETRIES=1
 ```
 
-如果设置了 `--second-timeout-ms` / `AI_REVIEW_SECOND_TIMEOUT_MS` 或 `--second-retries` / `AI_REVIEW_SECOND_RETRIES`，会覆盖二审默认值。通用 `--timeout-ms` 和 `--retries` 仍用于主审。
+如果设置了 `--second-timeout-ms` / `AI_REVIEW_SECOND_TIMEOUT_MS` 或 `--second-retries` / `AI_REVIEW_SECOND_RETRIES`，会覆盖继承来的预算。
 
 优先级：
 
@@ -465,6 +472,27 @@ AI_REVIEW_API_STYLE=chat
 - CLI command 只能来自可信配置。
 - 审核上下文过大时，优先用 `--path` 缩小范围，而不是盲目增大限制。
 - 高风险改动建议启用双模型和 `--profile high-accuracy`。
+
+## `.ai-reviewignore`
+
+可以在仓库根目录创建 `.ai-reviewignore` 来排除部分文件不参与 review。
+
+```gitignore
+dist/
+*.snap
+src/generated/**
+!src/generated/keep-me.js
+```
+
+该文件的规则接近 `.gitignore`，生效范围包括：
+
+- `changedFiles`
+- Git diff / diff stat
+- 变更文件上下文收集
+- untracked 文件的伪 diff
+- CodeGraph 的变更文件输入
+
+如果只是临时缩小本次 review 范围，而不是维护长期排除规则，仍然优先使用 `--path` / `--paths`。
 
 ## 故障排查
 

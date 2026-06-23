@@ -22,10 +22,14 @@ import {
   withDisplayFields,
 } from "./review-display.mjs";
 import {
+  buildRequirementAuditCacheKey,
+  clearCachedRequirementAudit,
   decorateRequirementAuditBlock,
   loadRequirementAuditorPrompt,
+  readCachedRequirementAudit,
   renderRequirementAuditBrief,
   withRequirementAuditPass,
+  writeCachedRequirementAudit,
   writeRequirementAuditArtifacts,
 } from "./requirement-audit.mjs";
 import { assertRequestContext } from "./request-context.mjs";
@@ -130,9 +134,25 @@ async function main() {
   }
 }
 
-async function runRequirementAudit({ context, outDir, assets, options, primaryResolved }) {
+export async function runRequirementAudit({
+  context,
+  outDir,
+  assets,
+  options,
+  primaryResolved,
+  callReviewModelFn = callReviewModel,
+}) {
   const auditBrief = renderRequirementAuditBrief(context);
   const auditPrompt = await loadRequirementAuditorPrompt();
+  const cacheKey = buildRequirementAuditCacheKey({ context, auditPrompt, primaryResolved });
+  if (!options.noRequirementAuditCache) {
+    const cachedResult = await readCachedRequirementAudit(outDir, cacheKey);
+    if (cachedResult) {
+      await writeRequirementAuditArtifacts(outDir, cachedResult, auditBrief);
+      return { result: cachedResult, brief: auditBrief };
+    }
+  }
+
   let result;
   try {
     result = attachReviewerSource(await callReviewModelWithMalformedRetry({
@@ -141,7 +161,7 @@ async function runRequirementAudit({ context, outDir, assets, options, primaryRe
       schema: assets.schema,
       options,
       providersConfig: assets.providersConfig,
-    }), reviewerSource("requirement-auditor", primaryResolved));
+    }, callReviewModelFn), reviewerSource("requirement-auditor", primaryResolved));
   } catch (error) {
     result = {
       verdict: "needs_human",
@@ -159,6 +179,11 @@ async function runRequirementAudit({ context, outDir, assets, options, primaryRe
       ],
       confidence: 0,
     };
+  }
+  if (result.verdict === "pass") {
+    await writeCachedRequirementAudit(outDir, cacheKey, result);
+  } else {
+    await clearCachedRequirementAudit(outDir, cacheKey);
   }
   await writeRequirementAuditArtifacts(outDir, result, auditBrief);
   return { result, brief: auditBrief };
@@ -505,6 +530,28 @@ export function buildSecondReviewOptions(options, providersConfig) {
     return null;
   }
 
+  let inheritedPrimaryBudget = null;
+  if (providersConfig) {
+    try {
+      inheritedPrimaryBudget = resolveProviderOptions(options, providersConfig);
+    } catch {
+      inheritedPrimaryBudget = null;
+    }
+  }
+
+  const inheritedTimeoutMs = positiveNumber(
+    options.timeoutMs,
+    readEnv("AI_REVIEW_TIMEOUT_MS"),
+    inheritedPrimaryBudget?.timeoutMs,
+    120000,
+  );
+  const inheritedRetries = nonNegativeInteger(
+    options.retries,
+    readEnv("AI_REVIEW_RETRIES"),
+    inheritedPrimaryBudget?.retries,
+    1,
+  );
+
   const secondConfig = {
     provider: options.secondProvider || readEnv("AI_REVIEW_SECOND_PROVIDER"),
     model: options.secondModel || readEnv("AI_REVIEW_SECOND_MODEL"),
@@ -523,8 +570,8 @@ export function buildSecondReviewOptions(options, providersConfig) {
     ...options,
     usePrimaryEnv: false,
     secondReviewMode,
-    timeoutMs: positiveNumber(options.secondTimeoutMs, readEnv("AI_REVIEW_SECOND_TIMEOUT_MS"), 60000),
-    retries: nonNegativeInteger(options.secondRetries, readEnv("AI_REVIEW_SECOND_RETRIES"), 0),
+    timeoutMs: positiveNumber(options.secondTimeoutMs, readEnv("AI_REVIEW_SECOND_TIMEOUT_MS"), inheritedTimeoutMs),
+    retries: nonNegativeInteger(options.secondRetries, readEnv("AI_REVIEW_SECOND_RETRIES"), inheritedRetries),
     provider: secondConfig.provider || (secondConfig.model ? undefined : options.provider),
     model: secondConfig.model || options.model,
     baseUrl: secondConfig.baseUrl || options.baseUrl,

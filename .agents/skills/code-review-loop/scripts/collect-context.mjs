@@ -1,16 +1,18 @@
 import { execFile, exec, spawn } from "node:child_process";
-import { promises as fs } from "node:fs";
+import crypto from "node:crypto";
+import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { redactSecrets } from "./redact-secrets.mjs";
 import { renderReviewBrief } from "./render-brief.mjs";
-import { applyReviewProfile, resolveReviewProfile } from "./review-profile.mjs";
+import { applyReviewProfile, maxProfileFileBytes, resolveReviewProfile } from "./review-profile.mjs";
 import { formatReviewTime } from "./time-format.mjs";
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
 const FILE_CONTEXT_CACHE_VERSION = "v2-redact-2026-06-15";
+const DEFAULT_MAX_FILE_BYTES = 120000;
 
 export { redactSecrets, renderReviewBrief, getGitRoot };
 
@@ -37,6 +39,8 @@ export function parseArgs(argv) {
 
     if (arg === "--dry-run") {
       args.dryRun = true;
+    } else if (arg === "--no-requirement-audit-cache") {
+      args.noRequirementAuditCache = true;
     } else if (arg === "--request" && next) {
       args.request = next;
       index += 1;
@@ -205,15 +209,22 @@ function splitPathList(value = "") {
 export async function collectReviewContext(options = {}) {
   const root = await getGitRoot();
   const scope = resolveReviewScope(root, options);
-  const [untrackedFiles, rawDiff, verification] = await Promise.all([
+  const reviewIgnore = await loadReviewIgnore(root);
+  const readSnippet = createSnippetReader();
+  const [trackedChangedFilesRaw, untrackedFilesRaw, verification] = await Promise.all([
+    trackedChangedFileNames(root, scope),
     untrackedFileNames(root, scope),
-    rawGitDiff(root, scope),
     runVerifications(root, options.verifications),
   ]);
-  const changedFiles = await changedFileNames(root, scope, untrackedFiles);
-  const untrackedSizeBytes = await totalFileSizeBytes(root, untrackedFiles);
-  const profileMaxFileBytes = options.maxFileBytes;
-  const profileUntrackedDiff = await renderUntrackedDiff(root, untrackedFiles, profileMaxFileBytes);
+  const trackedChangedFiles = filterReviewIgnoredFiles(trackedChangedFilesRaw, reviewIgnore);
+  const untrackedFiles = filterReviewIgnoredFiles(untrackedFilesRaw, reviewIgnore);
+  const changedFiles = mergeFileLists(trackedChangedFiles, untrackedFiles);
+  const profileMaxFileBytes = maxProfileFileBytes(options);
+  const [untrackedSizeBytes, profileUntrackedDiff, rawDiff] = await Promise.all([
+    totalFileSizeBytes(root, untrackedFiles),
+    renderUntrackedDiff(root, untrackedFiles, profileMaxFileBytes, readSnippet),
+    rawGitDiff(root, scope, trackedChangedFiles),
+  ]);
   const combinedDiffForProfile = [rawDiff, profileUntrackedDiff].filter(Boolean).join("\n\n");
   const profile = resolveReviewProfile({
     changedFiles,
@@ -223,21 +234,23 @@ export async function collectReviewContext(options = {}) {
     verification,
   });
   applyReviewProfile(options, profile);
-  const untrackedDiff = options.maxFileBytes === profileMaxFileBytes
-    ? profileUntrackedDiff
-    : await renderUntrackedDiff(root, untrackedFiles, options.maxFileBytes);
-  const finalCombinedDiff = [rawDiff, untrackedDiff].filter(Boolean).join("\n\n");
+  const changedPathspec = toPathspec(changedFiles);
+  const trackedChangedPathspec = toPathspec(trackedChangedFiles);
+  const untrackedDiffPromise = options.maxFileBytes === profileMaxFileBytes
+    ? Promise.resolve(profileUntrackedDiff)
+    : renderUntrackedDiff(root, untrackedFiles, options.maxFileBytes, readSnippet);
 
-  const [status, diffStat, projectRules] = await Promise.all([
-    git(["status", "--short", ...scope.pathspec], root),
-    git([...scope.diffCommand, "--stat", ...scope.pathspec], root),
+  const [untrackedDiff, status, diffStat, projectRules, docs, fileContexts, codegraphContext] = await Promise.all([
+    untrackedDiffPromise,
+    scopedGitStatus(root, changedPathspec),
+    scopedGitDiffStat(root, scope, trackedChangedPathspec),
     readIfExists(path.join(root, "AGENTS.md")),
+    readDocs(root, options),
+    readChangedFileContexts(root, changedFiles, options, readSnippet),
+    collectCodeGraphContext(root, changedFiles, options),
   ]);
+  const finalCombinedDiff = [rawDiff, untrackedDiff].filter(Boolean).join("\n\n");
   const diff = limitGitDiff(finalCombinedDiff, options.maxDiffBytes);
-
-  const docs = await readDocs(root, options);
-  const fileContexts = await readChangedFileContexts(root, changedFiles, options);
-  const codegraphContext = await collectCodeGraphContext(root, changedFiles, options);
 
   return {
     root,
@@ -319,22 +332,17 @@ async function git(args, cwd) {
   }
 }
 
-async function rawGitDiff(root, scope) {
-  return git([...scope.diffCommand, ...scope.pathspec], root);
-}
-
 function limitGitDiff(diff, maxBytes = 350000) {
   return limitText(redactSecrets(diff), maxBytes, "\n\n[Diff 已被 code-review-loop 截断。如需更完整内容，请调大 --max-diff-bytes。]");
 }
 
-async function changedFileNames(root, scope, precomputedUntracked) {
+async function trackedChangedFileNames(root, scope) {
   const trackedCommand = scope.staged
     ? ["diff", "--name-only", "--cached", ...scope.pathspec]
     : ["diff", "--name-only", scope.base, ...scope.pathspec];
-  const untrackedList = precomputedUntracked || await untrackedFileNames(root, scope);
   const trackedOutput = await git(trackedCommand, root);
 
-  return `${trackedOutput}\n${untrackedList.join("\n")}`
+  return trackedOutput
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("warning:"))
@@ -351,7 +359,7 @@ async function untrackedFileNames(root, scope) {
     .filter((file, index, files) => files.indexOf(file) === index);
 }
 
-async function renderUntrackedDiff(root, untrackedFiles, maxFileBytes) {
+async function renderUntrackedDiff(root, untrackedFiles, maxFileBytes, readSnippet = readTextFileSnippet) {
   const blocks = [];
   for (const file of untrackedFiles) {
     const resolved = path.resolve(root, file);
@@ -360,10 +368,37 @@ async function renderUntrackedDiff(root, untrackedFiles, maxFileBytes) {
       blocks.push(renderAddedFileDiff(file, "[疑似密钥文件已省略]"));
       continue;
     }
-    const content = await readTextFileSnippet(resolved, maxFileBytes);
+    const content = await readSnippet(resolved, maxFileBytes);
     if (content) blocks.push(renderAddedFileDiff(file, redactSecrets(content)));
   }
   return blocks.join("\n\n");
+}
+
+function mergeFileLists(...lists) {
+  return lists
+    .flatMap((files) => files || [])
+    .filter((file, index, files) => file && files.indexOf(file) === index);
+}
+
+function toPathspec(files = []) {
+  if (!files.length) return [];
+  return ["--", ...files];
+}
+
+async function scopedGitStatus(root, pathspec) {
+  if (!pathspec.length) return "";
+  return git(["status", "--short", ...pathspec], root);
+}
+
+async function scopedGitDiffStat(root, scope, pathspec) {
+  if (!pathspec.length) return "";
+  return git([...scope.diffCommand, "--stat", ...pathspec], root);
+}
+
+async function rawGitDiff(root, scope, files) {
+  const pathspec = toPathspec(files);
+  if (!pathspec.length) return "";
+  return git([...scope.diffCommand, ...pathspec], root);
 }
 
 async function totalFileSizeBytes(root, files) {
@@ -395,12 +430,14 @@ ${body}`;
 }
 
 async function readDocs(root, options) {
+  const checklistDocs = Array.isArray(options.checklists) ? options.checklists : [];
+  const extraDocs = Array.isArray(options.docs) ? options.docs : [];
   const docs = [
     ["用户需求", options.request || ".ai-review/review-context/current-request.md"],
     ["已接受设计", options.design || ".ai-review/review-context/current-design.md"],
     ["实现计划", options.plan || ".ai-review/review-context/current-plan.md"],
-    ...options.checklists.map((docPath, index) => [`审核清单 ${index + 1}`, docPath]),
-    ...options.docs.map((docPath, index) => [`额外文档 ${index + 1}`, docPath]),
+    ...checklistDocs.map((docPath, index) => [`审核清单 ${index + 1}`, docPath]),
+    ...extraDocs.map((docPath, index) => [`额外文档 ${index + 1}`, docPath]),
   ].filter(([, docPath]) => docPath);
 
   const results = [];
@@ -416,9 +453,12 @@ async function readDocs(root, options) {
       continue;
     }
     if (!(await fileExists(resolved))) continue;
+    const contentFingerprint = await fileContentFingerprint(resolved);
     results.push({
       label,
       path: path.relative(root, resolved),
+      contentHash: contentFingerprint.hash,
+      contentBytes: contentFingerprint.bytes,
       content: await readTextFileSnippet(resolved, maxDocBytes),
     });
   }
@@ -434,21 +474,18 @@ async function fileExists(filePath) {
   }
 }
 
-async function readChangedFileContexts(root, changedFiles, options) {
-  const contexts = [];
+async function readChangedFileContexts(root, changedFiles, options, readSnippet = readTextFileSnippet) {
   const maxFiles = Number.isFinite(options.maxFiles) ? options.maxFiles : 12;
-  const maxFileBytes = Number.isFinite(options.maxFileBytes) ? options.maxFileBytes : 120000;
+  const maxFileBytes = Number.isFinite(options.maxFileBytes) ? options.maxFileBytes : DEFAULT_MAX_FILE_BYTES;
   const cacheDir = path.join(root, ".ai-review", "cache");
   const cache = await loadFileContextCache(cacheDir);
-
-  for (const changedFile of changedFiles.slice(0, maxFiles)) {
+  const contextItems = await mapWithConcurrency(changedFiles.slice(0, maxFiles), 6, async (changedFile) => {
     if (isSecretPath(changedFile)) {
-      contexts.push({ path: changedFile, content: "[疑似密钥文件已省略]" });
-      continue;
+      return { path: changedFile, content: "[疑似密钥文件已省略]" };
     }
 
     const resolved = path.resolve(root, changedFile);
-    if (!isPathInside(root, resolved)) continue;
+    if (!isPathInside(root, resolved)) return null;
 
     let mtime = 0;
     try {
@@ -460,17 +497,18 @@ async function readChangedFileContexts(root, changedFiles, options) {
 
     const cacheKey = `${FILE_CONTEXT_CACHE_VERSION}::${changedFile}::${mtime}::${maxFileBytes}`;
     if (cache[cacheKey] !== undefined) {
-      contexts.push({ path: changedFile, content: cache[cacheKey] });
-      continue;
+      return { path: changedFile, content: cache[cacheKey] };
     }
 
-    const content = await readTextFileSnippet(resolved, maxFileBytes);
+    const content = await readSnippet(resolved, maxFileBytes);
     if (content) {
       const redacted = redactSecrets(content);
-      contexts.push({ path: changedFile, content: redacted });
       cache[cacheKey] = redacted;
+      return { path: changedFile, content: redacted };
     }
-  }
+    return null;
+  });
+  const contexts = contextItems.filter(Boolean);
 
   if (changedFiles.length > maxFiles) {
     contexts.push({
@@ -481,6 +519,160 @@ async function readChangedFileContexts(root, changedFiles, options) {
 
   await saveFileContextCache(cacheDir, cache);
   return contexts;
+}
+
+function createSnippetReader() {
+  const snippets = new Map();
+
+  return async function readSnippet(filePath, maxBytes) {
+    const normalizedMaxBytes = Number.isFinite(maxBytes) ? maxBytes : DEFAULT_MAX_FILE_BYTES;
+    const cacheKey = path.resolve(filePath);
+    const cached = snippets.get(cacheKey);
+    if (cached && cached.maxBytes >= normalizedMaxBytes) {
+      return limitText(cached.content, normalizedMaxBytes, "\n\n[文件上下文已截断。]");
+    }
+
+    const content = await readTextFileSnippet(filePath, normalizedMaxBytes);
+    snippets.set(cacheKey, { maxBytes: normalizedMaxBytes, content });
+    return content;
+  };
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }));
+
+  return results;
+}
+
+async function loadReviewIgnore(root) {
+  const ignorePath = path.join(root, ".ai-reviewignore");
+  const content = await readIfExists(ignorePath);
+  if (!content.trim()) return [];
+  return content
+    .split(/\r?\n/)
+    .map(parseReviewIgnoreRule)
+    .filter(Boolean);
+}
+
+function parseReviewIgnoreRule(line) {
+  let pattern = String(line || "").trim();
+  if (!pattern) return null;
+  const escapedLeading = pattern.startsWith("\\#") || pattern.startsWith("\\!");
+  if (escapedLeading) {
+    pattern = pattern.slice(1);
+  } else if (pattern.startsWith("#")) {
+    return null;
+  }
+
+  let negated = false;
+  if (!escapedLeading && pattern.startsWith("!")) {
+    negated = true;
+    pattern = pattern.slice(1).trim();
+  }
+
+  if (!pattern) return null;
+  const directoryOnly = pattern.endsWith("/");
+  const normalizedPattern = normalizeIgnorePattern(pattern.replace(/\/+$/, ""));
+  if (!normalizedPattern) return null;
+
+  return {
+    negated,
+    matcher: compileReviewIgnorePattern(normalizedPattern, { directoryOnly }),
+  };
+}
+
+function normalizeIgnorePattern(pattern) {
+  return String(pattern || "")
+    .replace(/\\/g, "/")
+    .replace(/^\.\/+/, "")
+    .replace(/\/+/g, "/");
+}
+
+function compileReviewIgnorePattern(pattern, { directoryOnly = false } = {}) {
+  const anchored = pattern.startsWith("/");
+  const unanchoredPattern = anchored ? pattern.slice(1) : pattern;
+  const hasSlash = unanchoredPattern.includes("/");
+
+  if (!hasSlash) {
+    const basenameRegex = globToRegexSource(unanchoredPattern);
+    if (anchored) {
+      if (directoryOnly) {
+        return new RegExp(`^${basenameRegex}(?:/.*)?$`);
+      }
+      return new RegExp(`^${basenameRegex}(?:$|/.*)`);
+    }
+    if (directoryOnly) {
+      return new RegExp(`(?:^|/)${basenameRegex}(?:/.*)?$`);
+    }
+    return new RegExp(`(?:^|/)${basenameRegex}(?:$|/.*)`);
+  }
+
+  const body = globToRegexSource(unanchoredPattern);
+  if (directoryOnly) {
+    return new RegExp(`^${body}(?:/.*)?$`);
+  }
+  return new RegExp(`^${body}(?:$|/.*)`);
+}
+
+function globToRegexSource(pattern) {
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    const next = pattern[index + 1];
+
+    if (char === "*") {
+      if (next === "*") {
+        const afterNext = pattern[index + 2];
+        if (afterNext === "/") {
+          source += "(?:.*/)?";
+          index += 2;
+        } else {
+          source += ".*";
+          index += 1;
+        }
+      } else {
+        source += "[^/]*";
+      }
+      continue;
+    }
+
+    if (char === "?") {
+      source += "[^/]";
+      continue;
+    }
+
+    source += escapeRegexChar(char);
+  }
+  return source;
+}
+
+function escapeRegexChar(char) {
+  return /[\\^$+?.()|[\]{}]/.test(char) ? `\\${char}` : char;
+}
+
+function filterReviewIgnoredFiles(files, rules) {
+  if (!rules.length) return files;
+  return files.filter((filePath) => !isReviewIgnored(filePath, rules));
+}
+
+function isReviewIgnored(filePath, rules) {
+  const normalizedPath = String(filePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  let ignored = false;
+  for (const rule of rules) {
+    if (!rule.matcher.test(normalizedPath)) continue;
+    ignored = !rule.negated;
+  }
+  return ignored;
 }
 
 async function collectCodeGraphContext(root, changedFiles, options) {
@@ -702,6 +894,24 @@ async function readIfExists(filePath) {
     return await fs.readFile(filePath, "utf8");
   } catch {
     return "";
+  }
+}
+
+async function fileContentFingerprint(filePath) {
+  try {
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile()) return { hash: "", bytes: 0 };
+
+    const hash = crypto.createHash("sha256");
+    await new Promise((resolve, reject) => {
+      const stream = createReadStream(filePath);
+      stream.on("data", (chunk) => hash.update(chunk));
+      stream.on("error", reject);
+      stream.on("end", resolve);
+    });
+    return { hash: hash.digest("hex"), bytes: stat.size };
+  } catch {
+    return { hash: "", bytes: 0 };
   }
 }
 
