@@ -97,17 +97,16 @@ test("Phase 8 smoke checklists cover every supported host tool", async () => {
   }
 });
 
-test("Phase 8 roadmap checklist remains complete without marking Phase 10 complete", async () => {
+test("Phase 8 roadmap checklist remains complete while Phase 11 remains open", async () => {
   const roadmap = await readText("total.md");
   const phase8 = sectionBetween(roadmap, "## Phase 8:", "## Phase 9:");
-  const phase10 = sectionBetween(roadmap, "## Phase 10:", "## Phase 11:");
+  const phase11 = sectionBetween(roadmap, "## Phase 11:", "## Phase 12:");
 
   assert.doesNotMatch(phase8, /plan, route, execute|execute through Runtime|Plan and execute/i);
   for (const task of phase8.matchAll(/- \[(x| )\] /g)) {
     assert.equal(task[1], "x");
   }
-  assert.match(phase10, /- \[ \] /);
-  assert.doesNotMatch(phase10, /- \[x\] /);
+  assertSectionUnchecked(phase11, "Phase 11");
 });
 
 async function readText(file) {
@@ -125,4 +124,13 @@ function sectionBetween(content, startMarker, endMarker) {
   assert.notEqual(start, -1, `${startMarker} not found`);
   assert.notEqual(end, -1, `${endMarker} not found`);
   return content.slice(start, end);
+}
+
+function assertSectionUnchecked(section, label) {
+  const tasks = [...section.matchAll(/- \[(x| )\] /g)];
+  assert.ok(tasks.length > 0, `${label} should contain checklist tasks`);
+
+  for (const task of tasks) {
+    assert.equal(task[1], " ", `${label} should not be marked complete yet`);
+  }
 }

@@ -532,14 +532,14 @@ safety:
 
 **Tasks:**
 
-- [ ] Add policy schema.
-- [ ] Add policy validation.
-- [ ] Add budget enforcement.
-- [ ] Add risk-based human approval.
-- [ ] Add secret redaction in traces and prompts.
-- [ ] Add file and command allowlists.
-- [ ] Add team policy examples.
-- [ ] Add audit export for completed runs.
+- [x] Add policy schema.
+- [x] Add policy validation.
+- [x] Add budget enforcement.
+- [x] Add risk-based human approval.
+- [x] Add secret redaction in traces and prompts.
+- [x] Add file and command allowlists.
+- [x] Add team policy examples.
+- [x] Add audit export for completed runs.
 
 **Acceptance Criteria:**
 

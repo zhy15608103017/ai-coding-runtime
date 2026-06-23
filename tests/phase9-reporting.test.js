@@ -327,16 +327,15 @@ test("Phase 9 CLI report supports JSON and Markdown exports", async () => {
   }
 });
 
-test("Phase 9 roadmap checklist is complete without marking Phase 10 complete", async () => {
+test("Phase 9 roadmap checklist is complete while Phase 11 remains open", async () => {
   const roadmap = await readFile(path.resolve("total.md"), "utf8");
   const phase9 = sectionBetween(roadmap, "## Phase 9:", "## Phase 10:");
-  const phase10 = sectionBetween(roadmap, "## Phase 10:", "## Phase 11:");
+  const phase11 = sectionBetween(roadmap, "## Phase 11:", "## Phase 12:");
 
   for (const task of phase9.matchAll(/- \[(x| )\] /g)) {
     assert.equal(task[1], "x");
   }
-  assert.match(phase10, /- \[ \] /);
-  assert.doesNotMatch(phase10, /- \[x\] /);
+  assertSectionUnchecked(phase11, "Phase 11");
 });
 
 function runCli(args, runtimeHome) {
@@ -357,6 +356,15 @@ function sectionBetween(content, startMarker, endMarker) {
   assert.notEqual(start, -1, `${startMarker} not found`);
   assert.notEqual(end, -1, `${endMarker} not found`);
   return content.slice(start, end);
+}
+
+function assertSectionUnchecked(section, label) {
+  const tasks = [...section.matchAll(/- \[(x| )\] /g)];
+  assert.ok(tasks.length > 0, `${label} should contain checklist tasks`);
+
+  for (const task of tasks) {
+    assert.equal(task[1], " ", `${label} should not be marked complete yet`);
+  }
 }
 
 function reliabilityRecord(runId, status, verificationStatus) {
