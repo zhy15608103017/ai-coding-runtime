@@ -509,6 +509,7 @@ function validateRoutingMetadata(plan, tasks, errors) {
   validateModelTierAliases(plan, errors);
   validateModelRegistry(plan, errors);
   validateBudgetStatus(plan, errors);
+  validatePolicyConfigMetadata(plan, errors);
   validatePolicyStatus(plan, errors);
 }
 
@@ -974,6 +975,64 @@ function validatePolicyStatus(plan, errors) {
       code: "policy.status.alias.inconsistent",
       field: "policyStatus/policy_status",
       message: "policyStatus must match policy_status.",
+    });
+  }
+}
+
+function validatePolicyConfigMetadata(plan, errors) {
+  validateOptionalAliasObject("policyConfig", "policy_config", plan, errors, "policy.config");
+  validateOptionalAliasObject("policyValidation", "policy_validation", plan, errors, "policy.validation");
+
+  const validation = plan.policyValidation ?? plan.policy_validation;
+  if (validation !== undefined) {
+    if (!validation || typeof validation !== "object" || Array.isArray(validation)) {
+      errors.push({
+        code: "policy.validation.invalid",
+        field: "policyValidation",
+        message: "policyValidation must be an object when present.",
+      });
+    } else if (typeof validation.valid !== "boolean" || !Array.isArray(validation.errors)) {
+      errors.push({
+        code: "policy.validation.invalid",
+        field: "policyValidation",
+        message: "policyValidation must include valid and errors fields.",
+      });
+    }
+  }
+}
+
+function validateOptionalAliasObject(camelField, snakeField, plan, errors, codePrefix) {
+  const left = plan[camelField];
+  const right = plan[snakeField];
+
+  for (const [field, value] of [
+    [camelField, left],
+    [snakeField, right],
+  ]) {
+    if (value !== undefined && (!value || typeof value !== "object" || Array.isArray(value))) {
+      errors.push({
+        code: `${codePrefix}.invalid`,
+        field,
+        message: `${field} must be an object when present.`,
+      });
+    }
+  }
+
+  if (
+    left !== undefined &&
+    right !== undefined &&
+    left &&
+    right &&
+    typeof left === "object" &&
+    typeof right === "object" &&
+    !Array.isArray(left) &&
+    !Array.isArray(right) &&
+    !valuesEqual(left, right)
+  ) {
+    errors.push({
+      code: `${codePrefix}.alias.inconsistent`,
+      field: `${camelField}/${snakeField}`,
+      message: `${camelField} must match ${snakeField}.`,
     });
   }
 }

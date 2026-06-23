@@ -4,8 +4,9 @@ import { checkProviderHealth, generateModelResponse } from "./providers.js";
 import { createReport, formatReportMarkdown } from "./report.js";
 import { RUN_STATUS, canVerifyRun } from "./status.js";
 import { runSupervisorReview } from "./supervisor.js";
-import { buildVerificationCommands, runVerificationCommands } from "./verification.js";
+import { applyCommandPolicy, buildVerificationCommands, runVerificationCommands } from "./verification.js";
 import { submitWorkerResult } from "./worker.js";
+import { createAuditExport, redactSecrets } from "./policy.js";
 
 export const RUNTIME_TOOLS = [
   {
@@ -50,6 +51,11 @@ export const RUNTIME_TOOLS = [
       required: ["runId"],
       additionalProperties: false,
     },
+  },
+  {
+    name: "runtime_audit",
+    description: "Return a redacted audit export for a completed runtime run.",
+    inputSchema: runIdSchema(),
   },
   {
     name: "runtime_cancel",
@@ -116,7 +122,9 @@ export async function callRuntimeTool(name, args, { store, runtimeOptions = {} }
     case "runtime_verify":
       return verifyRun(requireRunId(args), store, withVerificationOverride(runtimeOptions, args));
     case "runtime_report":
-      return reportRun(requireRunId(args), args, store);
+      return reportRun(requireRunId(args), args, store, runtimeOptions);
+    case "runtime_audit":
+      return auditRun(requireRunId(args), store, runtimeOptions);
     case "runtime_cancel":
       return cancelRun(requireRunId(args), args, store);
     case "runtime_approve":
@@ -165,7 +173,12 @@ function createEstimate(request, runtimeOptions = {}) {
     budgetPolicy: plan.budgetPolicy,
     escalationPolicy: plan.escalationPolicy,
     budgetStatus: plan.budgetStatus,
+    policyConfig: plan.policyConfig,
+    policy_config: plan.policy_config,
+    policyValidation: plan.policyValidation,
+    policy_validation: plan.policy_validation,
     policyStatus: plan.policyStatus,
+    policy_status: plan.policy_status,
     routingTrace: plan.routingTrace,
     estimatedCost: plan.estimatedCost,
     approvalRequired: plan.approvalRequired,
@@ -219,7 +232,10 @@ async function collectRun(runId, store) {
 }
 
 async function verifyRun(runId, store, runtimeOptions = {}) {
-  const commands = buildVerificationCommands(runtimeOptions.verification ?? {});
+  const commands = applyCommandPolicy(
+    buildVerificationCommands(runtimeOptions.verification ?? {}),
+    runtimeOptions.policy
+  );
   const cwd = runtimeOptions.verification?.cwd ?? runtimeOptions.workspace?.cwd ?? process.cwd();
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
@@ -303,6 +319,7 @@ async function verifyRun(runId, store, runtimeOptions = {}) {
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAtMs - startedAtMs,
   };
+  verification = redactSecrets(verification, runtimeOptions.policy);
 
   await store.updateRecord(
     runId,
@@ -388,7 +405,10 @@ async function generateSupervisorModelResponse({ runId, request, store, runtimeO
       providers: runtimeOptions.providers,
     });
   } catch (error) {
-    const failure = modelGenerationFailure(request, error, startedAt, runtimeOptions);
+    const failure = redactSecrets(
+      modelGenerationFailure(request, error, startedAt, runtimeOptions),
+      runtimeOptions.policy
+    );
     await store.recordModelCallFailure(runId, {
       provider: failure.provider,
       model: failure.model,
@@ -403,6 +423,7 @@ async function generateSupervisorModelResponse({ runId, request, store, runtimeO
     return failure;
   }
 
+  response = redactSecrets(response, runtimeOptions.policy);
   await store.recordModelCall(runId, {
     provider: response.provider,
     model: response.model,
@@ -441,11 +462,11 @@ function runStatusForVerification(status) {
   return RUN_STATUS.verificationSkipped;
 }
 
-async function reportRun(runId, args, store) {
+async function reportRun(runId, args, store, runtimeOptions = {}) {
   const record = await store.readRecord(runId);
   const historyRecords =
     typeof store.listRecords === "function" ? await store.listRecords() : [];
-  const report = createReport(record, { historyRecords });
+  const report = createReport(record, { historyRecords, policy: runtimeOptions.policy });
 
   if (args?.format === "markdown") {
     return {
@@ -456,6 +477,14 @@ async function reportRun(runId, args, store) {
   }
 
   return report;
+}
+
+async function auditRun(runId, store, runtimeOptions = {}) {
+  const record = await store.readRecord(runId);
+  const historyRecords =
+    typeof store.listRecords === "function" ? await store.listRecords() : [];
+  const report = createReport(record, { historyRecords, policy: runtimeOptions.policy });
+  return createAuditExport(record, { report, policy: runtimeOptions.policy });
 }
 
 async function cancelRun(runId, args, store) {
@@ -545,9 +574,9 @@ async function modelGenerate(args = {}, store, runtimeOptions = {}) {
       throw error;
     }
 
-    const failure = withModelTraceMetadata(
-      modelGenerationFailure(providerArgs, error, startedAt, runtimeOptions),
-      args
+    const failure = redactSecrets(
+      withModelTraceMetadata(modelGenerationFailure(providerArgs, error, startedAt, runtimeOptions), args),
+      runtimeOptions.policy
     );
     await store.recordModelCallFailure(args.runId, {
       provider: failure.provider,
@@ -563,7 +592,7 @@ async function modelGenerate(args = {}, store, runtimeOptions = {}) {
     return failure;
   }
 
-  response = withModelTraceMetadata(response, args);
+  response = redactSecrets(withModelTraceMetadata(response, args), runtimeOptions.policy);
 
   if (args.runId) {
     await store.recordModelCall(args.runId, {

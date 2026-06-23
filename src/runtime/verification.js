@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 
+import { evaluateCommandPolicy } from "./policy.js";
+
 export function buildVerificationCommands(config = {}) {
   const commands = [];
 
@@ -63,6 +65,21 @@ export async function runVerificationCommands({ commands = [], cwd = process.cwd
   };
 }
 
+export function applyCommandPolicy(commands = [], policy = null) {
+  if (!policy) return commands;
+  return commands.map((command) => {
+    const evaluation = evaluateCommandPolicy({ command, policy });
+    if (evaluation.allowed) return command;
+    return {
+      ...command,
+      policyBlocked: true,
+      policy_blocked: true,
+      policyViolations: evaluation.violations,
+      policy_violations: evaluation.violations,
+    };
+  });
+}
+
 function configuredCommandList(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -110,6 +127,19 @@ function runVerificationCommand(config = {}, { cwd }) {
           code: "verification.command.required",
           message: "Verification command is required.",
         },
+      })
+    );
+  }
+
+  if (config.policyBlocked) {
+    return Promise.resolve(
+      finishCommand(baseResult, startedAtMs, {
+        error: config.policyViolations?.[0] ?? {
+          code: "policy.command.not_allowed",
+          message: "Command is blocked by policy.",
+        },
+        policyViolations: config.policyViolations ?? [],
+        policy_violations: config.policy_violations ?? config.policyViolations ?? [],
       })
     );
   }

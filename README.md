@@ -2,7 +2,7 @@
 
 AI Coding Runtime is a local-first orchestration layer for AI coding tasks.
 
-V0 currently covers the Phase 1 runtime skeleton through the Phase 9 reporting, observability, and cost controls:
+V0 currently covers the Phase 1 runtime skeleton through Phase 10 policy, safety, and team mode:
 
 - create a structured runtime plan from a user request
 - classify tasks into `cheap`, `standard`, and `premium` model tiers
@@ -26,8 +26,9 @@ V0 currently covers the Phase 1 runtime skeleton through the Phase 9 reporting, 
 - run Phase 7 verification with diff/test/lint/typecheck/custom command checks, task acceptance review, final supervisor review, and escalation metadata
 - provide setup guides, MCP configs, prompt samples, and smoke-test checklists for Codex Desktop, Codex CLI, Cursor, and OpenCode
 - generate Phase 9 reports with changed files, per-task cost attribution, routing and escalation reasons, failure categories, trace viewer data, export metadata, and historical model reliability metrics
+- enforce Phase 10 policy config for budget aliases, risk gates, workspace file policy, verification command allowlists, secret redaction, and completed-run audit export
 
-V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, apply validated text patches, run Phase 7 verification, connect to host tools through Phase 8 integration guides, and produce Phase 9 cost-aware run reports. It still does not autonomously generate worker patches from model calls; host tools or future worker loops submit structured worker results for validation.
+V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, apply validated text patches, run Phase 7 verification, connect to host tools through Phase 8 integration guides, produce Phase 9 cost-aware run reports, and enforce Phase 10 team policy controls. It still does not autonomously generate worker patches from model calls; host tools or future worker loops submit structured worker results for validation.
 Runs that include medium or high risk tasks are stored as `approval_required`. V0 provides a minimal approval input through CLI, HTTP, and MCP; later phases will add execution after approval and richer approval UI.
 Phase 4 routing is deterministic: file-editing tasks route to at least `standard`, final verification routes to `premium`, and failed low-tier attempts can be represented with escalation trace records.
 Explicit read-only planning requests such as `plan only`, `read-only`, or `不修改文件` produce low-risk plans that can be stored as `planned` without an approval gate.
@@ -42,6 +43,7 @@ node ./bin/ai-coding-runtime.js verify <run-id> --json
 node ./bin/ai-coding-runtime.js approve <run-id> --json
 node ./bin/ai-coding-runtime.js worker-result <run-id> T-003 --from-file worker-result.json --apply --json
 node ./bin/ai-coding-runtime.js report <run-id> --markdown
+node ./bin/ai-coding-runtime.js audit <run-id> --json
 node ./bin/ai-coding-runtime.js provider-health --json
 node ./bin/ai-coding-runtime.js generate "Say hello" --provider local --json
 node ./bin/ai-coding-runtime.js start --host 127.0.0.1 --port 3847
@@ -189,6 +191,7 @@ V0 HTTP endpoints:
 - `GET /api/providers/health`
 - `POST /api/model/generate`
 - `GET /api/runs/:id/report`
+- `GET /api/runs/:id/audit`
 - `POST /mcp`
 
 See `docs/integrations.md` and `docs/integrations/README.md` for Codex Desktop, Codex CLI, Cursor, and OpenCode setup examples.
@@ -210,9 +213,14 @@ The MCP gateway exposes:
 - `runtime_model_generate`
 - `runtime_submit_worker_result`
 
-`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`. `runtime_verify` can run from `planned`, `approved`, or `verification_failed`; it accepts an optional `verification` override object and records command checks, task acceptance review, final supervisor review, and escalation evidence.
+`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyConfig`, `policyValidation`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`. `runtime_verify` can run from `planned`, `approved`, or `verification_failed`; it accepts an optional `verification` override object and records command checks, task acceptance review, final supervisor review, and escalation evidence.
 `runtime_model_generate` calls a configured provider through the normalized Phase 5 interface. When given `runId`, it appends model usage, estimated cost, finish reason, and request metadata to the run trace; optional `taskId` metadata is recorded for Phase 9 cost attribution without being sent to the provider.
 `runtime_submit_worker_result` validates a structured worker result against the task contract, builds worker context from `allowed_files` plus read-only `referenced_files`, rejects patches outside `allowed_files`, optionally applies the patch when `apply: true`, and records the worker attempt for reporting.
+For compatibility with existing exact-list integrations, MCP `tools/list` omits `runtime_audit`; hosts that know the tool name can still call it through `tools/call`. `runtime_audit` returns a redacted completed-run audit export with policy, routing, worker, model, verification, event, report, and integrity metadata.
+
+## Policy
+
+Phase 10 adds a top-level `policy` config for team safety controls: budget limits, risk-based approval, secret redaction, workspace file policy, verification command allowlists, and completed-run audit export. Reports and audit exports are redacted by default. See `docs/policy.md` and `examples/team-policies/`.
 
 ## Reports
 
@@ -224,3 +232,5 @@ The MCP gateway exposes:
 - failure categories for provider errors, malformed worker output, policy violations, verification failures, and rejected approvals
 - trace viewer data and export metadata
 - historical model reliability metrics grouped by task type and model tier
+
+`ai-coding-runtime audit <run-id> --json` returns the Phase 10 redacted audit export for completed runs.

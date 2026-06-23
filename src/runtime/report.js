@@ -1,4 +1,6 @@
-export function createReport(record, { historyRecords = [] } = {}) {
+import { redactSecrets } from "./policy.js";
+
+export function createReport(record, { historyRecords = [], policy = record.plan?.policyConfig } = {}) {
   const tasks = record.plan.tasks;
   const modelCalls = Array.isArray(record.modelCalls) ? record.modelCalls : [];
   const workerAttempts = Array.isArray(record.workerAttempts) ? record.workerAttempts : [];
@@ -35,7 +37,7 @@ export function createReport(record, { historyRecords = [] } = {}) {
     followUpRecommendations,
   };
 
-  return {
+  const report = {
     runId: record.runId,
     status: record.status,
     request: record.request,
@@ -109,6 +111,7 @@ export function createReport(record, { historyRecords = [] } = {}) {
     },
     events: record.events,
   };
+  return redactSecrets(report, policy);
 }
 
 export function formatReportMarkdown(report) {

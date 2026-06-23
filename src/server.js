@@ -116,13 +116,23 @@ export function createRuntimeHttpServer({
         const record = await store.readRecord(reportMatch[1]);
         const historyRecords =
           typeof store.listRecords === "function" ? await store.listRecords() : [];
-        const report = createReport(record, { historyRecords });
+        const report = createReport(record, { historyRecords, policy: runtimeOptions.policy });
 
         if (url.searchParams.get("format") === "markdown") {
           return sendText(response, 200, formatReportMarkdown(report), "text/markdown; charset=utf-8");
         }
 
         return sendJson(response, 200, report);
+      }
+
+      const auditMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/audit$/);
+      if (request.method === "GET" && auditMatch) {
+        const audit = await callRuntimeTool(
+          "runtime_audit",
+          { runId: auditMatch[1] },
+          { store, runtimeOptions }
+        );
+        return sendJson(response, 200, audit);
       }
 
       if (request.method === "POST" && url.pathname === "/mcp") {

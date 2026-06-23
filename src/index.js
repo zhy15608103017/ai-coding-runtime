@@ -47,8 +47,23 @@ export {
 } from "./runtime/worker.js";
 export {
   buildVerificationCommands,
+  applyCommandPolicy,
   runVerificationCommands,
 } from "./runtime/verification.js";
+export {
+  budgetPolicyFromPolicy,
+  commandToText,
+  createAuditExport,
+  DEFAULT_POLICY_CONFIG,
+  evaluateCommandPolicy,
+  evaluateFilePolicy,
+  evaluateRunPolicy,
+  matchesPattern,
+  normalizePolicyConfig,
+  redactSecrets,
+  stableHash,
+  validatePolicyConfig,
+} from "./runtime/policy.js";
 export { reviewTaskAcceptance } from "./runtime/acceptance.js";
 export {
   createSkippedSupervisorReview,

@@ -16,6 +16,13 @@ import {
   routePlan,
   routeTask as routeTaskWithPolicy,
 } from "./router.js";
+import {
+  budgetPolicyFromPolicy,
+  evaluateRunPolicy,
+  normalizePolicyConfig,
+  redactSecrets,
+  validatePolicyConfig,
+} from "./policy.js";
 
 const DEFAULT_ESTIMATED_COST = {
   currency: "USD",
@@ -36,16 +43,26 @@ export function createRuntimePlan({
   budgetPolicy = DEFAULT_BUDGET_POLICY,
   escalationPolicy = DEFAULT_ESCALATION_POLICY,
   policyViolations = [],
+  policy = undefined,
+  policyExplicit = undefined,
+  policyValidation = undefined,
+  verification = {},
 } = {}) {
   if (!request || typeof request !== "string" || request.trim().length === 0) {
     throw new TypeError("createRuntimePlan requires a non-empty request string.");
   }
 
   const effectiveRoutingPolicy = mergeRoutingPolicy(routingPolicy);
-  const effectiveBudgetPolicy = {
+  const hasPolicyConfig = policyExplicit === undefined ? policy !== undefined : policyExplicit === true;
+  const policyConfig = normalizePolicyConfig(policy);
+  const effectivePolicyValidation = policyValidation ?? validatePolicyConfig(policyConfig);
+  const legacyBudgetPolicy = {
     ...DEFAULT_BUDGET_POLICY,
     ...(budgetPolicy ?? {}),
   };
+  const effectiveBudgetPolicy = hasPolicyConfig
+    ? budgetPolicyFromPolicy(policyConfig, legacyBudgetPolicy)
+    : legacyBudgetPolicy;
   const effectiveEscalationPolicy = {
     ...DEFAULT_ESCALATION_POLICY,
     ...(escalationPolicy ?? {}),
@@ -59,7 +76,6 @@ export function createRuntimePlan({
     routingPolicy: effectiveRoutingPolicy,
     budgetPolicy: effectiveBudgetPolicy,
   });
-  const policyStatus = createPolicyStatus(policyViolations);
   const tasks = taskDrafts.map((draft, index) => {
     const routing = routedPlan.routes[index];
 
@@ -73,6 +89,17 @@ export function createRuntimePlan({
       routing: routing.routing,
     });
   });
+  const policyStatus = evaluateRunPolicy({
+    policy: policyConfig,
+    policyValidation: effectivePolicyValidation,
+    tasks,
+    budgetStatus: routedPlan.budgetStatus,
+    verification,
+  });
+  if (Array.isArray(policyViolations) && policyViolations.length > 0) {
+    policyStatus.violations.push(...policyViolations);
+    policyStatus.allowed = false;
+  }
   const dependencies = tasks.flatMap((task) =>
     task.dependsOn.map((dependencyId) => ({
       from: dependencyId,
@@ -99,6 +126,10 @@ export function createRuntimePlan({
     budget_policy: effectiveBudgetPolicy,
     escalationPolicy: effectiveEscalationPolicy,
     escalation_policy: effectiveEscalationPolicy,
+    policyConfig,
+    policy_config: policyConfig,
+    policyValidation: effectivePolicyValidation,
+    policy_validation: effectivePolicyValidation,
     budgetStatus: routedPlan.budgetStatus,
     budget_status: routedPlan.budgetStatus,
     policyStatus,
@@ -138,11 +169,11 @@ export function createRuntimePlan({
   };
   const planReport = createPlanReport(plan);
 
-  return {
+  return redactSecrets({
     ...plan,
     planReport,
     plan_report: planReport,
-  };
+  }, policyConfig);
 }
 
 function mergeRoutingPolicy(routingPolicy) {
@@ -406,15 +437,6 @@ function createEstimatedCost(budgetStatus) {
     currency: budgetStatus.currency,
     maximum: budgetStatus.estimatedCost,
     note: "V0 estimates routing cost from model tier hints but does not call real model providers.",
-  };
-}
-
-function createPolicyStatus(policyViolations) {
-  const violations = Array.isArray(policyViolations) ? policyViolations : [];
-
-  return {
-    allowed: violations.length === 0,
-    violations,
   };
 }
 

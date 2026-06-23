@@ -23,6 +23,8 @@ export async function runCli(argv, io = process) {
         return await verifyCommand(rest, io);
       case "report":
         return await reportCommand(rest, io);
+      case "audit":
+        return await auditCommand(rest, io);
       case "approve":
         return await approveCommand(rest, io);
       case "worker-result":
@@ -137,7 +139,7 @@ async function reportCommand(args, io) {
   const store = new FileExecutionStore({ workspace: config.storage.directory });
   const record = await store.readRecord(runId);
   const historyRecords = await store.listRecords();
-  const report = createReport(record, { historyRecords });
+  const report = createReport(record, { historyRecords, policy: config.policy });
 
   if (options.json && !options.markdown) {
     io.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -145,6 +147,25 @@ async function reportCommand(args, io) {
     io.stdout.write(formatReportMarkdown(report));
   }
 
+  return 0;
+}
+
+async function auditCommand(args, io) {
+  const { positional } = parseArgs(args);
+  const [runId] = positional;
+
+  if (!runId) {
+    throw new Error("audit requires a run id.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const audit = await callRuntimeTool(
+    "runtime_audit",
+    { runId },
+    { store, runtimeOptions: runtimeOptionsFromConfig(config) }
+  );
+  io.stdout.write(`${JSON.stringify(audit, null, 2)}\n`);
   return 0;
 }
 
@@ -319,6 +340,9 @@ function runtimeOptionsFromConfig(config) {
     budgetPolicy: config.routing.budgetPolicy,
     escalationPolicy: config.routing.escalationPolicy,
     policyViolations: config.routing.policyViolations,
+    policy: config.policy,
+    policyExplicit: config.policyExplicit,
+    policyValidation: config.policyValidation,
     providers: config.providers,
     verification: config.verification,
   };
@@ -398,6 +422,7 @@ Usage:
   ai-coding-runtime approve <run-id> [--json]
   ai-coding-runtime worker-result <run-id> <task-id> --from-file result.json [--apply] [--json]
   ai-coding-runtime report <run-id> [--json|--markdown]
+  ai-coding-runtime audit <run-id> --json
   ai-coding-runtime provider-health [provider] [--json]
   ai-coding-runtime generate "<prompt>" [--provider name] [--model model] [--run-id run-id] [--task-id task-id] [--json]
 `;

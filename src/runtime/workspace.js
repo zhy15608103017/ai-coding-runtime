@@ -1,6 +1,8 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { evaluateFilePolicy } from "./policy.js";
+
 const DEFAULT_SKIP_DIRECTORIES = new Set([
   ".git",
   ".ai-coding-runtime",
@@ -30,6 +32,7 @@ export async function createContextPack({
   cwd = process.cwd(),
   task = {},
   maxBytesPerFile = 64 * 1024,
+  policy = null,
 } = {}) {
   const snapshot = await createWorkspaceSnapshot({ cwd });
   const allowedFiles = taskStringArray(task, "allowedFiles", "allowed_files");
@@ -41,7 +44,32 @@ export async function createContextPack({
     "reference_files"
   );
   const contextPatterns = uniqueStrings([...allowedFiles, ...referencedFiles]);
-  const selectedFiles = snapshot.files.filter((file) => isAllowedPath(file.path, contextPatterns));
+  const policyViolations = [];
+  const selectedFiles = snapshot.files.filter((file) => {
+    if (!isAllowedPath(file.path, contextPatterns)) return false;
+    if (!policy) return true;
+
+    const evaluation = evaluateFilePolicy({ filePath: file.path, policy });
+    if (!evaluation.allowed) {
+      policyViolations.push(...evaluation.violations);
+      return false;
+    }
+
+    return true;
+  });
+
+  if (policyViolations.length > 0) {
+    const error = new Error(
+      `Workspace context violates policy: ${policyViolations.map((item) => item.code).join(", ")}`
+    );
+    error.statusCode = 409;
+    error.validation = {
+      valid: false,
+      errors: policyViolations,
+    };
+    throw error;
+  }
+
   const files = [];
 
   for (const file of selectedFiles) {
@@ -66,7 +94,7 @@ export async function createContextPack({
   };
 }
 
-export function validateWorkerPatch({ patch, task = {} } = {}) {
+export function validateWorkerPatch({ patch, task = {}, policy = null } = {}) {
   const errors = [];
   const filesTouched = extractPatchFiles(patch);
   const allowedFiles = taskStringArray(task, "allowedFiles", "allowed_files");
@@ -94,6 +122,10 @@ export function validateWorkerPatch({ patch, task = {} } = {}) {
         file: filePath,
         message: `Worker patch touches file outside allowed_files: ${filePath}.`,
       });
+    }
+    if (policy) {
+      const policyEvaluation = evaluateFilePolicy({ filePath, policy });
+      errors.push(...policyEvaluation.violations);
     }
   }
 
@@ -166,8 +198,8 @@ export function extractPatchFiles(patch = "") {
   return [...files].filter(Boolean).sort();
 }
 
-export async function applyWorkerPatch({ cwd = process.cwd(), patch, task = {} } = {}) {
-  const validation = validateWorkerPatch({ patch, task });
+export async function applyWorkerPatch({ cwd = process.cwd(), patch, task = {}, policy = null } = {}) {
+  const validation = validateWorkerPatch({ patch, task, policy });
   if (!validation.valid) {
     const error = new Error(
       `Invalid worker patch: ${validation.errors.map((item) => item.code).join(", ")}`

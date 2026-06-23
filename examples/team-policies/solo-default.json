@@ -1,0 +1,22 @@
+{
+  "budget": {
+    "maxCostPerRun": 1,
+    "maxWorkerRetries": 8,
+    "maxCallsPerRun": 20
+  },
+  "safety": {
+    "requireHumanApprovalForHighRisk": true,
+    "requireTestsForCodeChanges": false,
+    "blockSecretExfiltration": true,
+    "blockUnapprovedNetworkAccess": false
+  },
+  "workspace": {
+    "trusted": true,
+    "allowedFiles": [],
+    "blockedFiles": [".env", ".env.*", "*.pem", "*.key", "secrets/**"]
+  },
+  "commands": {
+    "allowlist": [],
+    "blockNetworkByDefault": false
+  }
+}

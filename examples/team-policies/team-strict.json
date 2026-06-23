@@ -1,0 +1,22 @@
+{
+  "budget": {
+    "maxCostPerRun": 2,
+    "maxWorkerRetries": 2,
+    "maxCallsPerRun": 12
+  },
+  "safety": {
+    "requireHumanApprovalForHighRisk": true,
+    "requireTestsForCodeChanges": true,
+    "blockSecretExfiltration": true,
+    "blockUnapprovedNetworkAccess": true
+  },
+  "workspace": {
+    "trusted": true,
+    "allowedFiles": ["src/**", "tests/**", "docs/**", "package.json"],
+    "blockedFiles": [".env", ".env.*", "*.pem", "*.key", "secrets/**"]
+  },
+  "commands": {
+    "allowlist": ["git diff --check", "node --test", "npm test"],
+    "blockNetworkByDefault": true
+  }
+}

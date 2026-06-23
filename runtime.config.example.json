@@ -55,6 +55,33 @@
       }
     }
   },
+  "policy": {
+    "budget": {
+      "maxCostPerRun": 1,
+      "maxWorkerRetries": 8,
+      "maxCallsPerRun": 20
+    },
+    "routing": {
+      "finalReviewModelTier": "premium",
+      "securityTasksMinTier": "premium",
+      "readonlyTasksAllowLocalModels": true
+    },
+    "safety": {
+      "requireHumanApprovalForHighRisk": true,
+      "requireTestsForCodeChanges": false,
+      "blockSecretExfiltration": true,
+      "blockUnapprovedNetworkAccess": false
+    },
+    "workspace": {
+      "trusted": true,
+      "allowedFiles": [],
+      "blockedFiles": [".env", ".env.*", "*.pem", "*.key", "secrets/**"]
+    },
+    "commands": {
+      "allowlist": [],
+      "blockNetworkByDefault": false
+    }
+  },
   "verification": {
     "diff_check": {
       "enabled": true,

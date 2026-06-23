@@ -10,6 +10,7 @@ Phase 5 adds provider adapters for OpenAI-compatible, Anthropic, Gemini, and loc
 The runtime can also accept structured worker results, validate patch boundaries against task contracts, optionally apply validated text patches, and run the Phase 7 verification engine: command checks, task acceptance review, final supervisor review, and escalation metadata.
 Phase 8 adds host-tool setup guides, sample MCP configs, prompt samples, and smoke-test checklists for Codex Desktop, Codex CLI, Cursor, and OpenCode. Start with `docs/integrations/README.md` for the guide index.
 Phase 9 expands final reports with changed files, per-task cost attribution, unattributed model usage, routing and escalation reasons, failure categories, trace viewer data, export metadata, and historical model reliability metrics.
+Phase 10 adds team policy metadata, secret redaction, file and command allowlists, and completed-run audit export. Host tools should surface `policyStatus.violations`, keep approval gates visible for high-risk work, and use `runtime_audit` through MCP `tools/call` or `GET /api/runs/:runId/audit` when a completed run needs redacted evidence for team review.
 Phase 3 responses include task contract validation metadata and a deterministic planning prompt. If a plan contains medium or high risk tasks, `runtime_run` creates a run with status `approval_required`; `runtime_approve` records human approval and moves the run to `approved`.
 Phase 4 responses add classifier, model registry, routing policy, budget policy, escalation policy, budget status, policy status, and routing trace metadata. If `budgetStatus.allowed` or `policyStatus.allowed` is `false`, `runtime_run` refuses persisted execution with a policy error.
 Explicit read-only planning prompts such as `plan only`, `read-only`, or `不修改文件` produce low-risk task contracts and can be persisted with status `planned`.
@@ -31,7 +32,7 @@ MCP tools:
 - `runtime_model_generate`
 - `runtime_submit_worker_result`
 
-`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution.
+`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyConfig`, `policyValidation`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution.
 Use `runtime_provider_health` before real generation to confirm local API key and model configuration. Use `runtime_model_generate` only when the host tool intentionally wants Runtime to call a configured provider directly.
 Use `runtime_submit_worker_result` after a run is approved to submit a worker's structured patch result. The worker context pack is built from task `allowed_files` plus read-only `referenced_files`. The result must include `patch`, `explanation`, `verificationNotes`, `confidence`, `filesTouched`, and acceptance evidence for every task acceptance item. Runtime rejects patches outside `allowed_files` and worker results that explicitly include task `forbidden_actions`. Set `apply: true` only when the host tool wants Runtime to apply a validated text patch to the configured workspace.
 Use `runtime_verify` for runs in `planned`, `approved`, or `verification_failed`. Runs in `approval_required` should be approved first, then verified. The tool accepts `{ "runId": "...", "verification": { ... } }` when a host wants to override the configured diff/test/lint/typecheck/custom commands or final review settings for a single run.
@@ -168,12 +169,14 @@ Endpoints:
 - `GET /api/providers/health`
 - `POST /api/model/generate`
 - `GET /api/runs/:id/report`
+- `GET /api/runs/:id/audit`
 - `POST /mcp`
 
-Plan and estimate responses include task graph, approval, validation, planning prompt, plan report, model registry, routing policy, budget policy, budget status, policy status, escalation policy, and routing trace metadata.
+Plan and estimate responses include task graph, approval, validation, planning prompt, plan report, model registry, routing policy, budget policy, budget status, policy config, policy validation, policy status, escalation policy, and routing trace metadata.
 `POST /api/verify` accepts `{ "runId": "..." }` or `{ "runId": "...", "verification": { ... } }` and returns `skipped`, `passed`, or `failed` with command checks, task acceptance review, final supervisor review, and escalation evidence. Persisted run status becomes `verification_skipped`, `verification_passed`, or `verification_failed`. Final reports split verification into Command Checks, Acceptance Review, Final Supervisor Review, and Escalation sections so hosts can show which checks passed, failed, or were skipped. Phase 9 report JSON also includes `finalReport`, `costReport`, `perTaskModelUsage`, `routingDecisions`, `escalationDecisions`, `failureAnalysis`, `traceViewerData`, `exportFormat`, and `modelReliability`; `costReport.unattributedModelUsage` captures provider calls that cannot be mapped to a task.
 `POST /api/model/generate` and `runtime_model_generate` accept optional `taskId` metadata with `runId`; the runtime stores it only in the run trace for report cost attribution and does not forward it to the provider request body.
 `POST /api/runs/:id/worker-results` accepts `{ "taskId": "T-003", "apply": true, "result": { ... } }`, validates the worker output, builds context from `allowed_files` plus read-only `referenced_files`, records a worker attempt, and applies the patch only when it remains inside the task `allowed_files`.
+`GET /api/runs/:id/audit` returns a redacted Phase 10 audit export for completed runs, including policy, routing, worker, model, verification, event, report, and integrity metadata.
 
 If `server.apiToken` or `AI_CODING_RUNTIME_API_TOKEN` is set, every endpoint except `/api/health` requires:
 

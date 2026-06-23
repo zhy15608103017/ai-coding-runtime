@@ -1,0 +1,31 @@
+{
+  "budget": {
+    "maxCostPerRun": 0.75,
+    "maxWorkerRetries": 1,
+    "maxCallsPerRun": 8
+  },
+  "routing": {
+    "finalReviewModelTier": "premium",
+    "securityTasksMinTier": "premium",
+    "readonlyTasksAllowLocalModels": false
+  },
+  "safety": {
+    "requireHumanApprovalForHighRisk": true,
+    "requireTestsForCodeChanges": true,
+    "blockSecretExfiltration": true,
+    "blockUnapprovedNetworkAccess": true
+  },
+  "workspace": {
+    "trusted": false,
+    "allowedFiles": ["src/**", "tests/**"],
+    "blockedFiles": [".env", ".env.*", "*.pem", "*.key", "secrets/**", "config/production/**"]
+  },
+  "commands": {
+    "allowlist": ["git diff --check", "node --test"],
+    "blockNetworkByDefault": true
+  },
+  "secrets": {
+    "redactionText": "[REDACTED]",
+    "patterns": ["api[_-]?key", "token", "secret", "password", "credential", "private[_-]?key"]
+  }
+}

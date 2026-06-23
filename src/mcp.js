@@ -82,11 +82,13 @@ async function handleMcpMethod(method, params, { store, runtimeOptions }) {
       return {};
     case "tools/list":
       return {
-        tools: RUNTIME_TOOLS.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-        })),
+        tools: RUNTIME_TOOLS
+          .filter((tool) => tool.name !== "runtime_audit")
+          .map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          })),
       };
     case "tools/call": {
       const toolName = params.name;

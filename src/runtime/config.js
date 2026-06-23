@@ -8,6 +8,7 @@ import {
   MODEL_TIER_ALIASES,
 } from "./router.js";
 import { DEFAULT_PROVIDER_CONFIG } from "./providers.js";
+import { normalizePolicyConfig, validatePolicyConfig } from "./policy.js";
 
 export const DEFAULT_RUNTIME_CONFIG = {
   server: {
@@ -28,6 +29,7 @@ export const DEFAULT_RUNTIME_CONFIG = {
     policy: DEFAULT_ROUTING_POLICY,
   },
   providers: DEFAULT_PROVIDER_CONFIG,
+  policy: normalizePolicyConfig(),
   verification: {
     diff_check: {
       enabled: true,
@@ -50,6 +52,7 @@ export const DEFAULT_RUNTIME_CONFIG = {
 
 export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {}) {
   const fileConfig = await readConfigFile(cwd);
+  const hasExplicitPolicy = isPlainObject(fileConfig) && Object.hasOwn(fileConfig, "policy");
   const merged = deepMerge(DEFAULT_RUNTIME_CONFIG, fileConfig);
 
   if (env.AI_CODING_RUNTIME_HOME) {
@@ -69,6 +72,20 @@ export async function loadRuntimeConfig({ cwd = process.cwd(), env = process.env
   }
 
   applyProviderEnvOverrides(merged, env);
+
+  const policyValidation = validatePolicyConfig(merged.policy);
+  merged.policy = normalizePolicyConfig(merged.policy);
+  merged.policyValidation = policyValidation;
+  merged.policyExplicit = hasExplicitPolicy;
+  merged.policy_explicit = hasExplicitPolicy;
+  if (hasExplicitPolicy) {
+    merged.routing.budgetPolicy = {
+      ...merged.routing.budgetPolicy,
+      maxCostPerRun: merged.policy.budget.maxCostPerRun,
+      maxCallsPerRun: merged.policy.budget.maxCallsPerRun,
+      maxRetryCount: merged.policy.budget.maxWorkerRetries,
+    };
+  }
 
   return merged;
 }

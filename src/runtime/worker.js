@@ -1,4 +1,5 @@
 import { applyWorkerPatch, createContextPack, validateWorkerPatch } from "./workspace.js";
+import { redactSecrets } from "./policy.js";
 
 const EXECUTABLE_RUN_STATUSES = new Set([
   "planned",
@@ -30,12 +31,13 @@ export async function submitWorkerResult({
   }
 
   const workspaceCwd = runtimeOptions.workspace?.cwd ?? process.cwd();
+  const policy = runtimeOptions.policy;
   let contextPack;
   try {
-    contextPack = await createContextPack({ cwd: workspaceCwd, task });
+    contextPack = await createContextPack({ cwd: workspaceCwd, task, policy });
   } catch (error) {
     contextPack = createFallbackContextPack({ cwd: workspaceCwd, task });
-    const workerPrompt = createWorkerPrompt({ task, contextPack });
+    const workerPrompt = redactSecrets(createWorkerPrompt({ task, contextPack }), policy);
     const contextValidation = {
       valid: false,
       errors: [
@@ -50,7 +52,7 @@ export async function submitWorkerResult({
       createWorkerAttempt({
         runId,
         task,
-        result,
+        result: redactSecrets(result, policy),
         status: "failed",
         applied: false,
         filesTouched: [],
@@ -61,9 +63,10 @@ export async function submitWorkerResult({
     );
     throw validationError("Worker context generation failed", contextValidation);
   }
-  const workerPrompt = createWorkerPrompt({ task, contextPack });
+  const workerPrompt = redactSecrets(createWorkerPrompt({ task, contextPack }), policy);
+  const safeResult = redactSecrets(result, policy);
   const validation = validateWorkerResult({ task, result });
-  const patchValidation = validateWorkerPatch({ patch: result?.patch, task });
+  const patchValidation = validateWorkerPatch({ patch: result?.patch, task, policy });
 
   if (!validation.valid) {
     await store.recordWorkerAttempt(
@@ -71,7 +74,7 @@ export async function submitWorkerResult({
       createWorkerAttempt({
         runId,
         task,
-        result,
+        result: safeResult,
         status: "failed",
         applied: false,
         filesTouched: patchValidation.filesTouched,
@@ -89,7 +92,7 @@ export async function submitWorkerResult({
       createWorkerAttempt({
         runId,
         task,
-        result,
+        result: safeResult,
         status: "failed",
         applied: false,
         filesTouched: patchValidation.filesTouched,
@@ -107,6 +110,7 @@ export async function submitWorkerResult({
         cwd: workspaceCwd,
         patch: result.patch,
         task,
+        policy,
       });
     } catch (error) {
       const applyValidation = {
@@ -123,7 +127,7 @@ export async function submitWorkerResult({
         createWorkerAttempt({
           runId,
           task,
-          result,
+          result: safeResult,
           status: "failed",
           applied: false,
           filesTouched: patchValidation.filesTouched,
@@ -140,7 +144,7 @@ export async function submitWorkerResult({
   const attempt = createWorkerAttempt({
     runId,
     task,
-    result,
+    result: safeResult,
     status,
     applied: apply,
     filesTouched: patchValidation.filesTouched,
