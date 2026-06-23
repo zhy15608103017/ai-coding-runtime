@@ -1,3 +1,6 @@
+import { readdirSync, statSync } from "node:fs";
+import path from "node:path";
+
 import {
   createApprovalGate,
   createPlanningPrompt,
@@ -31,6 +34,14 @@ const DEFAULT_ESTIMATED_COST = {
   note: "V0 skeleton records routing tiers but does not call real model providers.",
 };
 
+const DEFAULT_SKIP_DIRECTORIES = new Set([
+  ".git",
+  ".ai-coding-runtime",
+  ".ai-review",
+  ".codegraph",
+  "node_modules",
+]);
+
 export function routeTask(task) {
   return routeTaskWithPolicy(task);
 }
@@ -47,11 +58,14 @@ export function createRuntimePlan({
   policyExplicit = undefined,
   policyValidation = undefined,
   verification = {},
+  workspace = {},
 } = {}) {
   if (!request || typeof request !== "string" || request.trim().length === 0) {
     throw new TypeError("createRuntimePlan requires a non-empty request string.");
   }
 
+  const normalizedRequest = request.trim();
+  const workspaceContext = createWorkspacePlanningContext({ workspace, request: normalizedRequest });
   const effectiveRoutingPolicy = mergeRoutingPolicy(routingPolicy);
   const hasPolicyConfig = policyExplicit === undefined ? policy !== undefined : policyExplicit === true;
   const policyConfig = normalizePolicyConfig(policy);
@@ -69,8 +83,8 @@ export function createRuntimePlan({
   };
   const effectiveModelRegistry = Array.isArray(modelRegistry) ? modelRegistry : DEFAULT_MODEL_REGISTRY;
   const createdAt = now.toISOString();
-  const planId = createId("plan", request, createdAt);
-  const taskDrafts = createDefaultTaskDrafts(request.trim());
+  const planId = createId("plan", normalizedRequest, createdAt);
+  const taskDrafts = createDefaultTaskDrafts(normalizedRequest, workspaceContext);
   const routedPlan = routePlan(taskDrafts, {
     modelRegistry: effectiveModelRegistry,
     routingPolicy: effectiveRoutingPolicy,
@@ -109,12 +123,22 @@ export function createRuntimePlan({
   const approval = createApprovalGate(tasks);
   const estimatedCost = createEstimatedCost(routedPlan.budgetStatus);
   const riskSummary = summarizeRisk(tasks);
-  const planningPrompt = createPlanningPrompt({ request: request.trim() });
+  const planningPrompt = createPlanningPrompt({
+    request: normalizedRequest,
+    workspaceSummary: workspaceContext.summary,
+  });
+  const workspaceSummaryFields = workspaceContext.summary
+    ? {
+        workspaceSummary: workspaceContext.summary,
+        workspace_summary: workspaceContext.summary,
+      }
+    : {};
   const basePlan = {
     schemaVersion: "runtime.plan.v1",
     planId,
-    request: request.trim(),
+    request: normalizedRequest,
     createdAt,
+    ...workspaceSummaryFields,
     modelTiers: MODEL_TIERS,
     modelTierAliases: MODEL_TIER_ALIASES,
     model_tier_aliases: MODEL_TIER_ALIASES,
@@ -201,15 +225,19 @@ function mergeRoutingPolicy(routingPolicy) {
   };
 }
 
-function createDefaultTaskDrafts(request) {
+function createDefaultTaskDrafts(request, workspaceContext) {
   if (isReadOnlyPlanningRequest(request)) {
-    return createReadOnlyTaskDrafts(request);
+    return createReadOnlyTaskDrafts(request, workspaceContext);
   }
 
-  return createImplementationTaskDrafts(request);
+  return createImplementationTaskDrafts(request, workspaceContext);
 }
 
-function createReadOnlyTaskDrafts(request) {
+function createReadOnlyTaskDrafts(request, workspaceContext) {
+  const workspaceAcceptance = workspaceContext.summary
+    ? [`workspace summary records ${workspaceContext.summary.totalFiles} file(s)`]
+    : [];
+
   return [
     {
       id: "T-001",
@@ -225,6 +253,7 @@ function createReadOnlyTaskDrafts(request) {
       acceptance: [
         "workspace structure is summarized",
         "request is preserved in the run trace",
+        ...workspaceAcceptance,
       ],
       expectedOutput: ["workspace summary", "planning notes"],
     },
@@ -273,8 +302,11 @@ function createReadOnlyTaskDrafts(request) {
   ];
 }
 
-function createImplementationTaskDrafts(request) {
-  const taskScope = deriveImplementationTaskScope(request);
+function createImplementationTaskDrafts(request, workspaceContext) {
+  const taskScope = deriveImplementationTaskScope(request, workspaceContext);
+  const workspaceAcceptance = workspaceContext.summary
+    ? [`workspace summary records ${workspaceContext.summary.totalFiles} file(s)`]
+    : [];
 
   return [
     {
@@ -291,6 +323,7 @@ function createImplementationTaskDrafts(request) {
       acceptance: [
         "workspace structure is summarized",
         "request is preserved in the run trace",
+        ...workspaceAcceptance,
       ],
       expectedOutput: ["workspace summary", "planning notes"],
     },
@@ -392,10 +425,13 @@ function createImplementationTaskDrafts(request) {
   ];
 }
 
-function deriveImplementationTaskScope(request) {
+function deriveImplementationTaskScope(request, workspaceContext = createEmptyWorkspaceContext()) {
   const normalized = request.toLowerCase();
   const mentionedPaths = extractMentionedPaths(request);
   const mentionedFiles = mentionedPaths.filter((entry) => !entry.endsWith("/"));
+  const workspaceMatchedFiles = workspaceContext.available
+    ? mentionedFiles.filter((entry) => workspaceContext.fileSet.has(entry))
+    : [];
   const documentationFiles = mentionedFiles.filter(isDocumentationPath);
 
   if (isTestsOnlyRequest(normalized)) {
@@ -414,23 +450,50 @@ function deriveImplementationTaskScope(request) {
     };
   }
 
-  if (documentationFiles.length > 0 && isDocumentationOnlyRequest(normalized)) {
+  if (
+    documentationFiles.length > 0 &&
+    isDocumentationOnlyRequest(normalized, { mentionedFiles, documentationFiles })
+  ) {
     return {
       implementationAllowedFiles: documentationFiles,
-      verificationAllowedFiles: documentationFiles,
+      verificationAllowedFiles: [],
       referencedFiles: [],
       contextSelectors: {},
       acceptance: [],
     };
   }
 
+  const explicitImplementationFiles = workspaceMatchedFiles.filter(isCodeOrTestPath);
+  if (explicitImplementationFiles.length > 0) {
+    const explicitTestFiles = explicitImplementationFiles.filter(isTestPath);
+    const referencedFiles = workspaceMatchedFiles.filter(
+      (entry) => !explicitImplementationFiles.includes(entry)
+    );
+    return {
+      implementationAllowedFiles: explicitImplementationFiles,
+      verificationAllowedFiles:
+        explicitTestFiles.length > 0
+          ? explicitTestFiles
+          : defaultVerificationAllowedFiles(),
+      referencedFiles: uniqueStrings(referencedFiles),
+      contextSelectors: {},
+      acceptance: [
+        "planner narrows execution scope to explicitly mentioned workspace files",
+      ],
+    };
+  }
+
   return {
     implementationAllowedFiles: ["src/**", "tests/**"],
-    verificationAllowedFiles: ["tests/**", "package.json"],
+    verificationAllowedFiles: defaultVerificationAllowedFiles(),
     referencedFiles: [],
     contextSelectors: {},
     acceptance: [],
   };
+}
+
+function defaultVerificationAllowedFiles() {
+  return ["tests/**", "package.json"];
 }
 
 function deriveFocusedTestFiles(normalized, mentionedFiles) {
@@ -507,7 +570,15 @@ function createFocusedTestAcceptance(normalized, referencedFiles) {
   return [];
 }
 
-function isDocumentationOnlyRequest(normalized) {
+function isDocumentationOnlyRequest(normalized, { mentionedFiles = [], documentationFiles = [] } = {}) {
+  if (
+    documentationFiles.length > 0 &&
+    documentationFiles.length === mentionedFiles.length &&
+    includesAny(normalized, ["only modify ", "only edit ", "only change ", "only update "])
+  ) {
+    return true;
+  }
+
   return includesAny(normalized, [
     "documentation only",
     "docs only",
@@ -576,12 +647,145 @@ function isTestPath(entry) {
   return entry === "tests/" || entry.startsWith("tests/");
 }
 
+function isCodeOrTestPath(entry) {
+  return entry.startsWith("src/") || isTestPath(entry);
+}
+
 function includesAny(value, markers) {
   return markers.some((marker) => value.includes(marker));
 }
 
 function uniqueStrings(values) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))];
+}
+
+function createWorkspacePlanningContext({ workspace = {}, request }) {
+  if (!workspace?.cwd) {
+    return createEmptyWorkspaceContext();
+  }
+
+  const cwd = path.resolve(workspace.cwd);
+  try {
+    const entries = [];
+    collectWorkspaceEntries(cwd, "", entries, {
+      maxFiles: workspace.maxFiles ?? 500,
+      skipDirectories: DEFAULT_SKIP_DIRECTORIES,
+      fileCount: { value: 0 },
+    });
+    const files = entries.filter((entry) => entry.type === "file").map((entry) => entry.path).sort();
+    const directories = entries.filter((entry) => entry.type === "directory").map((entry) => entry.path).sort();
+    const fileSet = new Set(files);
+    const directorySet = new Set(directories);
+    const matchedRequestFiles = extractMentionedPaths(request)
+      .filter((entry) => !entry.endsWith("/") && fileSet.has(entry))
+      .sort();
+    const projectSignals = detectProjectSignals({ fileSet, directorySet });
+    const summary = {
+      cwd,
+      totalFiles: files.length,
+      total_files: files.length,
+      matchedRequestFiles,
+      matched_request_files: matchedRequestFiles,
+      projectSignals,
+      project_signals: projectSignals,
+    };
+
+    return {
+      available: true,
+      cwd,
+      files,
+      directories,
+      fileSet,
+      directorySet,
+      summary,
+    };
+  } catch (error) {
+    const summary = {
+      cwd,
+      totalFiles: 0,
+      total_files: 0,
+      matchedRequestFiles: [],
+      matched_request_files: [],
+      projectSignals: [],
+      project_signals: [],
+      warning: error.message,
+    };
+
+    return {
+      available: false,
+      cwd,
+      files: [],
+      directories: [],
+      fileSet: new Set(),
+      directorySet: new Set(),
+      summary,
+    };
+  }
+}
+
+function createEmptyWorkspaceContext() {
+  return {
+    available: false,
+    cwd: null,
+    files: [],
+    directories: [],
+    fileSet: new Set(),
+    directorySet: new Set(),
+    summary: null,
+  };
+}
+
+function collectWorkspaceEntries(root, relativeDirectory, entries, options) {
+  if (options.fileCount.value >= options.maxFiles) {
+    return;
+  }
+
+  const absoluteDirectory = path.join(root, relativeDirectory);
+  for (const entry of readdirSync(absoluteDirectory, { withFileTypes: true })) {
+    if (options.fileCount.value >= options.maxFiles) {
+      break;
+    }
+
+    if (entry.isDirectory() && options.skipDirectories.has(entry.name)) {
+      continue;
+    }
+
+    const relativePath = normalizeWorkspacePath(path.join(relativeDirectory, entry.name));
+    const absolutePath = path.join(root, relativePath);
+
+    if (entry.isDirectory()) {
+      entries.push({ type: "directory", path: relativePath });
+      collectWorkspaceEntries(root, relativePath, entries, options);
+    } else if (entry.isFile()) {
+      if (options.fileCount.value >= options.maxFiles) {
+        break;
+      }
+
+      const info = statSync(absolutePath);
+      options.fileCount.value += 1;
+      entries.push({
+        type: "file",
+        path: relativePath,
+        sizeBytes: info.size,
+      });
+    }
+  }
+}
+
+function detectProjectSignals({ fileSet, directorySet }) {
+  return uniqueStrings([
+    fileSet.has("package.json") ? "node-package" : null,
+    directorySet.has("src") ? "src-directory" : null,
+    directorySet.has("tests") ? "tests-directory" : null,
+    directorySet.has("docs") ? "docs-directory" : null,
+    fileSet.has("runtime.config.json") || fileSet.has("runtime.config.example.json")
+      ? "runtime-config"
+      : null,
+  ]);
+}
+
+function normalizeWorkspacePath(value = "") {
+  return String(value).replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
 }
 
 function isReadOnlyPlanningRequest(request) {

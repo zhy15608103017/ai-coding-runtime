@@ -438,26 +438,28 @@ test("provider retries transient failures and reports configuration errors clear
     assert.equal(response.request.attempts, 2);
     assert.equal(calls, 2);
 
-    await assert.rejects(
-      generateModelResponse(
-        {
-          provider: "openai-compatible",
-          messages: [{ role: "user", content: "missing key" }],
-        },
-        {
-          providers: {
-            entries: {
-              "openai-compatible": {
-                type: "openai-compatible",
-                baseUrl: server.url,
-                defaultModel: "gpt-test",
+    await withUnsetEnv("OPENAI_API_KEY", async () => {
+      await assert.rejects(
+        generateModelResponse(
+          {
+            provider: "openai-compatible",
+            messages: [{ role: "user", content: "missing key" }],
+          },
+          {
+            providers: {
+              entries: {
+                "openai-compatible": {
+                  type: "openai-compatible",
+                  baseUrl: server.url,
+                  defaultModel: "gpt-test",
+                },
               },
             },
-          },
-        }
-      ),
-      /OPENAI_API_KEY/
-    );
+          }
+        ),
+        /OPENAI_API_KEY/
+      );
+    });
 
     await assert.rejects(
       generateModelResponse(
@@ -806,4 +808,19 @@ function startJsonServer(handler) {
       });
     });
   });
+}
+
+async function withUnsetEnv(name, action) {
+  const original = process.env[name];
+  delete process.env[name];
+
+  try {
+    return await action();
+  } finally {
+    if (original === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = original;
+    }
+  }
 }

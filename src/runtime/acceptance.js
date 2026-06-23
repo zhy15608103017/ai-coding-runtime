@@ -16,12 +16,13 @@ function reviewTask({ task = {}, workerAttempts = [], hasWorkerAttempts = false 
     .reverse()
     .find((attempt) => (attempt.task_id ?? attempt.taskId) === taskId);
   const criteria = Array.isArray(task.acceptance) ? task.acceptance : [];
+  const requiresEvidence = taskRequiresAcceptanceEvidence(task);
   const items = criteria.map((criterion) =>
-    reviewCriterion({ criterion, latestAttempt, hasWorkerAttempts })
+    reviewCriterion({ criterion, latestAttempt, hasWorkerAttempts, requiresEvidence })
   );
   const status = latestAttempt
     ? summarizeItemStatus(items)
-    : hasWorkerAttempts
+    : hasWorkerAttempts && requiresEvidence
       ? "failed"
       : "skipped";
 
@@ -36,11 +37,11 @@ function reviewTask({ task = {}, workerAttempts = [], hasWorkerAttempts = false 
   };
 }
 
-function reviewCriterion({ criterion, latestAttempt, hasWorkerAttempts }) {
+function reviewCriterion({ criterion, latestAttempt, hasWorkerAttempts, requiresEvidence }) {
   if (!latestAttempt) {
     return {
       criterion,
-      status: hasWorkerAttempts ? "failed" : "skipped",
+      status: hasWorkerAttempts && requiresEvidence ? "failed" : "skipped",
       evidence: "",
     };
   }
@@ -58,6 +59,11 @@ function reviewCriterion({ criterion, latestAttempt, hasWorkerAttempts }) {
 function summarizeItemStatus(items) {
   if (items.length === 0) return "skipped";
   return items.every((item) => item.status === "passed") ? "passed" : "failed";
+}
+
+function taskRequiresAcceptanceEvidence(task = {}) {
+  const allowedFiles = task.allowed_files ?? task.allowedFiles;
+  return Array.isArray(allowedFiles) && allowedFiles.length > 0;
 }
 
 function summarizeAcceptanceStatus(taskReviews) {

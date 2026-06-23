@@ -127,8 +127,8 @@ test("reviewTaskAcceptance fails when acceptance evidence is missing", () => {
 test("reviewTaskAcceptance fails when any task lacks evidence after worker execution starts", () => {
   const review = reviewTaskAcceptance({
     tasks: [
-      { task_id: "T-001", title: "First", acceptance: ["first works"] },
-      { task_id: "T-002", title: "Second", acceptance: ["second works"] },
+      { task_id: "T-001", title: "First", acceptance: ["first works"], allowed_files: ["src/first.js"] },
+      { task_id: "T-002", title: "Second", acceptance: ["second works"], allowed_files: ["src/second.js"] },
     ],
     workerAttempts: [
       {
@@ -143,6 +143,28 @@ test("reviewTaskAcceptance fails when any task lacks evidence after worker execu
   assert.equal(review.tasks[0].status, "passed");
   assert.equal(review.tasks[1].status, "failed");
   assert.equal(review.tasks[1].items[0].status, "failed");
+});
+
+test("reviewTaskAcceptance skips read-only tasks without worker evidence after execution starts", () => {
+  const review = reviewTaskAcceptance({
+    tasks: [
+      { task_id: "T-001", title: "Context", acceptance: ["workspace summarized"], allowed_files: [] },
+      { task_id: "T-002", title: "Implement", acceptance: ["feature works"], allowed_files: ["README.md"] },
+      { task_id: "T-003", title: "Verify", acceptance: ["verification recorded"], allowed_files: [] },
+    ],
+    workerAttempts: [
+      {
+        task_id: "T-002",
+        status: "applied",
+        acceptance: { "feature works": "Updated README.md only." },
+      },
+    ],
+  });
+
+  assert.equal(review.status, "passed");
+  assert.equal(review.tasks[0].status, "skipped");
+  assert.equal(review.tasks[1].status, "passed");
+  assert.equal(review.tasks[2].status, "skipped");
 });
 
 test("runtime_verify records task acceptance review evidence", async () => {
@@ -475,6 +497,83 @@ test("runtime_verify records provider-backed final supervisor review", async () 
     assert.equal(verification.supervisorReview.summary, "Requirements align with verification evidence.");
     assert.equal(updated.modelCalls.length, 1);
     assert.equal(updated.modelCalls[0].provider, "openai-compatible");
+  } finally {
+    await server.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("runtime_verify omits structured response schema for openai-compatible final supervisor review requests", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-phase7-supervisor-schema-"));
+  const store = new FileExecutionStore({ workspace });
+  let seenBody = null;
+  const server = await startJsonServer(async ({ body }) => {
+    seenBody = body;
+    return {
+      status: 200,
+      body: {
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              content: JSON.stringify({
+                status: "passed",
+                summary: "OpenAI-compatible final review returned valid JSON text.",
+                requirementAlignment: "aligned",
+                diffRisk: "low",
+                verificationEvidence: "Supervisor prompt was sufficient without response_format.",
+                blockingIssues: [],
+              }),
+            },
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      },
+    };
+  });
+
+  try {
+    const run = await callRuntimeTool(
+      "runtime_run",
+      { request: "plan only: openai-compatible supervisor schema handling" },
+      { store }
+    );
+
+    const verification = await callRuntimeTool(
+      "runtime_verify",
+      { runId: run.runId },
+      {
+        store,
+        runtimeOptions: {
+          providers: {
+            retryPolicy: { maxRetries: 0 },
+            entries: {
+              "openai-compatible": {
+                type: "openai-compatible",
+                baseUrl: server.url,
+                apiKey: "test-key",
+                defaultModel: "gpt-test",
+                models: ["gpt-test"],
+              },
+            },
+          },
+          verification: {
+            diff_check: { enabled: false },
+            final_review: {
+              enabled: true,
+              requiredForRisk: ["low"],
+              provider: "openai-compatible",
+              model: "gpt-test",
+            },
+          },
+        },
+      }
+    );
+
+    assert.equal(verification.status, "passed");
+    assert.equal(verification.supervisorReview.status, "passed");
+    assert.ok(seenBody);
+    assert.equal(seenBody.response_format, undefined);
   } finally {
     await server.close();
     await rm(workspace, { recursive: true, force: true });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -312,9 +312,38 @@ test("createRuntimePlan narrows doc-only task scopes to requested documentation 
   assert.ok(implementationTask);
   assert.ok(verificationTask);
   assert.deepEqual(implementationTask.allowed_files, ["README.md", "docs/integrations.md"]);
-  assert.deepEqual(verificationTask.allowed_files, ["README.md", "docs/integrations.md"]);
+  assert.deepEqual(verificationTask.allowed_files, []);
   assert.ok(!implementationTask.allowed_files.includes("src/**"));
   assert.ok(!verificationTask.allowed_files.includes("tests/**"));
+});
+
+test("createRuntimePlan treats README-only requests as documentation-only when the workspace matches", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-planner-v2-doc-readme-"));
+
+  try {
+    await mkdir(path.join(workspace, "docs"), { recursive: true });
+    await writeFile(path.join(workspace, "README.md"), "# Runtime\n", "utf8");
+    await writeFile(path.join(workspace, "docs", "integrations.md"), "Local stdio MCP:\n", "utf8");
+
+    const plan = createRuntimePlan({
+      request:
+        "Only modify README.md to add one short sentence clarifying that runtime_execute applies patches and runs verification by default unless --no-apply or --no-verify is used.",
+      workspace: { cwd: workspace },
+    });
+
+    const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+    const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+    assert.ok(implementationTask);
+    assert.ok(verificationTask);
+    assert.deepEqual(plan.workspaceSummary.matchedRequestFiles, ["README.md"]);
+    assert.deepEqual(implementationTask.allowed_files, ["README.md"]);
+    assert.deepEqual(verificationTask.allowed_files, []);
+    assert.ok(!implementationTask.allowed_files.includes("src/**"));
+    assert.ok(!verificationTask.allowed_files.includes("tests/**"));
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("createRuntimePlan keeps implementation scope when implementation also mentions docs", () => {
@@ -425,6 +454,176 @@ test("createRuntimePlan keeps implementation scope for Chinese requests that ask
   assert.ok(verificationTask);
   assert.deepEqual(implementationTask.allowed_files, ["src/**", "tests/**"]);
   assert.deepEqual(verificationTask.allowed_files, ["tests/**", "package.json"]);
+});
+
+test("createRuntimePlan keeps tests-only scope for a new explicit test file in a workspace", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-planner-v2-new-test-"));
+
+  try {
+    await mkdir(path.join(workspace, "tests"), { recursive: true });
+    await writeFile(path.join(workspace, "package.json"), "{\"scripts\":{\"test\":\"node --test\"}}\n", "utf8");
+
+    const plan = createRuntimePlan({
+      request:
+        "Only modify tests/new-feature.test.js to cover the new rate limiting behavior.",
+      workspace: { cwd: workspace },
+    });
+
+    const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+    const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+    assert.ok(implementationTask);
+    assert.ok(verificationTask);
+    assert.deepEqual(implementationTask.allowed_files, ["tests/new-feature.test.js"]);
+    assert.deepEqual(verificationTask.allowed_files, ["tests/new-feature.test.js"]);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("createRuntimePlan keeps default implementation scope without workspace even when files are mentioned", () => {
+  const plan = createRuntimePlan({
+    request:
+      "Improve planner behavior in src/runtime/planner.js and tests/runtime.test.js. Keep the change focused.",
+  });
+
+  const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+  const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+  assert.ok(implementationTask);
+  assert.ok(verificationTask);
+  assert.deepEqual(implementationTask.allowed_files, ["src/**", "tests/**"]);
+  assert.deepEqual(verificationTask.allowed_files, ["tests/**", "package.json"]);
+});
+
+test("createRuntimePlan uses workspace context to narrow explicit implementation files", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-planner-v2-"));
+
+  try {
+    await mkdir(path.join(workspace, "src", "runtime"), { recursive: true });
+    await mkdir(path.join(workspace, "tests"), { recursive: true });
+    await writeFile(path.join(workspace, "src", "runtime", "planner.js"), "export {}\n", "utf8");
+    await writeFile(path.join(workspace, "tests", "runtime.test.js"), "import test from 'node:test';\n", "utf8");
+    await writeFile(path.join(workspace, "package.json"), "{\"scripts\":{\"test\":\"node --test\"}}\n", "utf8");
+
+    const plan = createRuntimePlan({
+      request:
+        "Improve planner behavior in src/runtime/planner.js and tests/runtime.test.js. Keep the change focused.",
+      workspace: { cwd: workspace },
+    });
+
+    const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+    const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+    assert.ok(implementationTask);
+    assert.ok(verificationTask);
+    assert.equal(plan.workspaceSummary.totalFiles, 3);
+    assert.deepEqual(plan.workspaceSummary.matchedRequestFiles, [
+      "src/runtime/planner.js",
+      "tests/runtime.test.js",
+    ]);
+    assert.deepEqual(plan.workspace_summary, plan.workspaceSummary);
+    assert.deepEqual(plan.planReport.workspace_summary, plan.workspaceSummary);
+    assert.ok(plan.planningPrompt.includes("src/runtime/planner.js"));
+    assert.ok(plan.planningPrompt.includes("tests/runtime.test.js"));
+    assert.ok(
+      plan.dependencies.some((edge) => edge.from === "T-002" && edge.to === "T-003")
+    );
+    assert.ok(
+      plan.dependencies.some((edge) => edge.from === "T-003" && edge.to === "T-004")
+    );
+    assert.deepEqual(implementationTask.allowed_files, [
+      "src/runtime/planner.js",
+      "tests/runtime.test.js",
+    ]);
+    assert.deepEqual(verificationTask.allowed_files, ["tests/runtime.test.js"]);
+    assert.deepEqual(implementationTask.depends_on, ["T-002"]);
+    assert.deepEqual(verificationTask.depends_on, ["T-003"]);
+    assert.equal(implementationTask.goal, "Apply the requested implementation inside the approved workspace scope.");
+    assert.equal(implementationTask.context_need, "medium");
+    assert.equal(implementationTask.verification, "medium");
+    assert.ok(implementationTask.forbidden_actions.includes("edit files outside the approved allowlist"));
+    assert.ok(
+      implementationTask.acceptance.includes(
+        "planner narrows execution scope to explicitly mentioned workspace files"
+      )
+    );
+    assert.deepEqual(implementationTask.expected_output, [
+      "patch",
+      "implementation notes",
+      "files touched",
+    ]);
+    assert.deepEqual(verificationTask.expected_output, [
+      "test patch",
+      "verification command",
+    ]);
+    assert.equal(verificationTask.goal, "Add or identify verification that proves the requested behavior.");
+    assert.equal(verificationTask.context_need, "medium");
+    assert.equal(verificationTask.verification, "easy");
+    assert.ok(verificationTask.forbidden_actions.includes("weaken existing assertions"));
+    assert.ok(verificationTask.forbidden_actions.includes("remove existing tests"));
+    assert.ok(verificationTask.acceptance.includes("verification command is recorded"));
+    assert.ok(
+      verificationTask.acceptance.includes(
+        "new behavior has test coverage when code changes are made"
+      )
+    );
+    assert.ok(
+      verificationTask.acceptance.includes(
+        "planner narrows execution scope to explicitly mentioned workspace files"
+      )
+    );
+    assert.ok(!implementationTask.allowed_files.includes("src/**"));
+    assert.ok(!verificationTask.allowed_files.includes("tests/**"));
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("createRuntimePlan keeps default verification scope when workspace has no explicit file match", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-planner-v2-default-"));
+
+  try {
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    await writeFile(path.join(workspace, "src", "app.js"), "export const value = 1;\n", "utf8");
+
+    const plan = createRuntimePlan({
+      request: "Implement login rate limiting with tests.",
+      workspace: { cwd: workspace },
+    });
+
+    const implementationTask = plan.tasks.find((task) => task.id === "T-003");
+    const verificationTask = plan.tasks.find((task) => task.id === "T-004");
+
+    assert.ok(implementationTask);
+    assert.ok(verificationTask);
+    assert.deepEqual(implementationTask.allowed_files, ["src/**", "tests/**"]);
+    assert.deepEqual(verificationTask.allowed_files, ["tests/**", "package.json"]);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("createRuntimePlan enforces workspace maxFiles inside a single large directory", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-planner-v2-maxfiles-"));
+
+  try {
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    await Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        writeFile(path.join(workspace, "src", `file-${index}.js`), `export const value${index} = ${index};\n`, "utf8")
+      )
+    );
+
+    const plan = createRuntimePlan({
+      request: "Inspect the workspace before planning.",
+      workspace: { cwd: workspace, maxFiles: 2 },
+    });
+
+    assert.equal(plan.workspaceSummary.totalFiles, 2);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 test("routeTask escalates high risk and hard-to-verify work", () => {
   assert.equal(

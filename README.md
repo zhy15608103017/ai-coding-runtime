@@ -29,7 +29,7 @@ V0 currently covers the Phase 1 runtime skeleton through Phase 10 policy, safety
 - generate Phase 9 reports with changed files, per-task cost attribution, routing and escalation reasons, failure categories, trace viewer data, export metadata, and historical model reliability metrics
 - enforce Phase 10 policy config for budget aliases, risk gates, workspace file policy, verification command allowlists, secret redaction, and completed-run audit export
 
-V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, explicitly execute a single-pass worker loop, apply validated text patches, run Phase 7 verification, connect to host tools through Phase 8 integration guides, produce Phase 9 cost-aware run reports, and enforce Phase 10 team policy controls. `runtime_run` remains plan-only; worker execution happens only through the explicit execute surfaces.
+V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, explicitly execute dependency-aware worker tasks with configured tier escalation and retry, apply validated text patches, run Phase 7 verification, connect to host tools through Phase 8 integration guides, produce Phase 9 cost-aware run reports, and enforce Phase 10 team policy controls. `runtime_run` remains plan-only; worker execution happens only through the explicit execute surfaces.
 Runs that include medium or high risk tasks are stored as `approval_required`. V0 provides a minimal approval input through CLI, HTTP, and MCP; approved runs can be executed explicitly, and later phases can add richer approval UI.
 Phase 4 routing is deterministic: file-editing tasks route to at least `standard`, final verification routes to `premium`, and failed low-tier attempts can be represented with escalation trace records.
 Explicit read-only planning requests such as `plan only`, `read-only`, or `不修改文件` produce low-risk plans that can be stored as `planned` without an approval gate.
@@ -71,6 +71,14 @@ node ./bin/ai-coding-runtime.js execute <run-id> --no-apply --no-verify --json
 ```
 
 HTTP and MCP expose the same behavior through `POST /api/runs/:id/execute` and `runtime_execute`.
+
+### Workspace Scope
+
+Implementation work stays inside the task contract boundary:
+
+- `allowed_files` are the only files that may be edited or patched.
+- `referenced_files` are read-only inputs for planning and verification.
+- worker results that target files outside the allowlist are rejected before patch application.
 
 Override the data directory:
 
@@ -235,7 +243,7 @@ The MCP gateway exposes:
 - `runtime_model_generate`
 - `runtime_submit_worker_result`
 
-`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyConfig`, `policyValidation`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`. `runtime_execute` executes each eligible worker task at most once, skips read-only/final-review/already-completed tasks, optionally applies validated patches, optionally runs verification, and returns executed/skipped task summaries plus a report. `runtime_verify` can run from `planned`, `approved`, or `verification_failed`; it accepts an optional `verification` override object and records command checks, task acceptance review, final supervisor review, and escalation evidence.
+`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyConfig`, `policyValidation`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`. `runtime_execute` runs eligible worker tasks only after dependencies are satisfied, skips read-only/final-review/already-completed tasks, upgrades to the next configured tier and retries after worker failure when retry budget allows, optionally applies validated patches, optionally runs verification, and returns executed/skipped/failed task summaries plus a report. `runtime_verify` can run from `planned`, `approved`, or `verification_failed`; it accepts an optional `verification` override object and records command checks, task acceptance review, final supervisor review, and escalation evidence.
 `runtime_model_generate` calls a configured provider through the normalized Phase 5 interface. When given `runId`, it appends model usage, estimated cost, finish reason, and request metadata to the run trace; optional `taskId` metadata is recorded for Phase 9 cost attribution without being sent to the provider.
 `runtime_submit_worker_result` validates a structured worker result against the task contract, builds worker context from `allowed_files` plus read-only `referenced_files`, rejects patches outside `allowed_files`, optionally applies the patch when `apply: true`, and records the worker attempt for reporting.
 For compatibility with existing exact-list integrations, MCP `tools/list` omits `runtime_audit`; hosts that know the tool name can still call it through `tools/call`. `runtime_audit` returns a redacted completed-run audit export with policy, routing, worker, model, verification, event, report, and integrity metadata.

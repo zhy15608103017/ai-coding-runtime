@@ -415,15 +415,16 @@ function evaluateVerificationEscalation({ record, verification }) {
 
 async function generateSupervisorModelResponse({ runId, request, store, runtimeOptions = {} }) {
   const startedAt = Date.now();
+  const providerRequest = prepareSupervisorModelRequest(request, runtimeOptions);
   let response;
 
   try {
-    response = await generateModelResponse(request, {
+    response = await generateModelResponse(providerRequest, {
       providers: runtimeOptions.providers,
     });
   } catch (error) {
     const failure = redactSecrets(
-      modelGenerationFailure(request, error, startedAt, runtimeOptions),
+      modelGenerationFailure(providerRequest, error, startedAt, runtimeOptions),
       runtimeOptions.policy
     );
     await store.recordModelCallFailure(runId, {
@@ -453,6 +454,37 @@ async function generateSupervisorModelResponse({ runId, request, store, runtimeO
   });
 
   return response;
+}
+
+function prepareSupervisorModelRequest(request, runtimeOptions = {}) {
+  const providerRequest = { ...request };
+
+  if (!shouldUseSupervisorResponseSchema(providerRequest.provider, runtimeOptions)) {
+    delete providerRequest.responseSchema;
+  }
+
+  return providerRequest;
+}
+
+function shouldUseSupervisorResponseSchema(provider, runtimeOptions = {}) {
+  const providerConfig = runtimeOptions.providers?.entries?.[provider];
+  const providerType = providerConfig?.type ?? provider;
+  const finalReviewSchemaSetting =
+    runtimeOptions.verification?.final_review?.responseSchema ??
+    runtimeOptions.verification?.final_review?.response_schema;
+  const providerSchemaSetting =
+    providerConfig?.finalReviewResponseSchema ??
+    providerConfig?.final_review_response_schema;
+
+  if (typeof finalReviewSchemaSetting === "boolean") {
+    return finalReviewSchemaSetting;
+  }
+
+  if (typeof providerSchemaSetting === "boolean") {
+    return providerSchemaSetting;
+  }
+
+  return providerType !== "openai-compatible";
 }
 
 function combineVerificationStatus(...statuses) {

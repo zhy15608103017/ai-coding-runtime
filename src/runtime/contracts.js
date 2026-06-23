@@ -61,7 +61,17 @@ export function createTaskGraph({
   };
 }
 
-export function createPlanningPrompt({ request }) {
+export function createPlanningPrompt({ request, workspaceSummary = null }) {
+  const workspaceLines = workspaceSummary
+    ? [
+        "",
+        "Workspace summary:",
+        `- total_files: ${workspaceSummary.total_files ?? workspaceSummary.totalFiles}`,
+        `- matched_request_files: ${(workspaceSummary.matched_request_files ?? workspaceSummary.matchedRequestFiles ?? []).join(", ") || "none"}`,
+        `- project_signals: ${(workspaceSummary.project_signals ?? workspaceSummary.projectSignals ?? []).join(", ") || "none"}`,
+      ]
+    : [];
+
   return [
     "You are the AI Coding Runtime planner.",
     "Convert the user request into a dependency-aware task graph and worker-safe Task Contract entries.",
@@ -69,6 +79,7 @@ export function createPlanningPrompt({ request }) {
     "Each Task Contract must include: task_id, title, goal, difficulty, risk, context_need, verification, model_tier, final_verification, depends_on, allowed_files, forbidden_actions, acceptance, and expected_output.",
     "Reject or revise any task that has no acceptance criteria.",
     "Mark medium and high risk plans as requiring human approval before execution.",
+    ...workspaceLines,
     "",
     "User request:",
     request,
@@ -150,6 +161,8 @@ export function createPlanReport(plan) {
     },
     taskGraph: plan.taskGraph,
     task_graph: plan.task_graph ?? plan.taskGraph,
+    workspaceSummary: plan.workspaceSummary ?? null,
+    workspace_summary: plan.workspace_summary ?? plan.workspaceSummary ?? null,
     riskSummary: plan.riskSummary,
     risk_summary: plan.risk_summary ?? plan.riskSummary,
     estimatedCost: plan.estimatedCost,

@@ -112,6 +112,351 @@ test("executeRun executes an eligible task once and records model and worker tra
   }
 });
 
+test("executeRun executes eligible tasks only after dependencies are satisfied", async () => {
+  const fixture = await createFixture("dependency-order");
+  try {
+    await writeFile(join(fixture.cwd, "src", "base.js"), "export const base = 1;\n", "utf8");
+    await writeFile(join(fixture.cwd, "src", "feature.js"), "export const feature = 1;\n", "utf8");
+    const record = await createRunWithTasks(fixture.store, [
+      taskContract("T-002", {
+        title: "Update dependent feature",
+        allowed_files: ["src/feature.js"],
+        allowedFiles: ["src/feature.js"],
+        dependsOn: ["T-001"],
+        depends_on: ["T-001"],
+      }),
+      taskContract("T-001", {
+        title: "Update base first",
+        allowed_files: ["src/base.js"],
+        allowedFiles: ["src/base.js"],
+      }),
+    ]);
+    const executionOrder = [];
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: { workspace: { cwd: fixture.cwd } },
+      generate: async (request) => {
+        const prompt = request.messages.map((message) => message.content).join("\n");
+        const taskId = prompt.includes("T-001") ? "T-001" : "T-002";
+        executionOrder.push(taskId);
+        return modelResponse(request, {
+          patch:
+            taskId === "T-001"
+              ? patchFor("src/base.js", "export const base = 1;", "export const base = 2;")
+              : patchFor("src/feature.js", "export const feature = 1;", "export const feature = 2;"),
+        });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.deepEqual(executionOrder, ["T-001", "T-002"]);
+    assert.deepEqual(result.executedTasks.map((task) => task.taskId), ["T-001", "T-002"]);
+    assert.equal(await readFile(join(fixture.cwd, "src", "base.js"), "utf8"), "export const base = 2;\n");
+    assert.equal(await readFile(join(fixture.cwd, "src", "feature.js"), "utf8"), "export const feature = 2;\n");
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("executeRun does not unlock dependent tasks when a dependency lacks acceptance criteria", async () => {
+  const fixture = await createFixture("dependency-missing-acceptance");
+  try {
+    const record = await createRunWithTasks(fixture.store, [
+      taskContract("T-001", {
+        title: "Invalid dependency contract",
+        acceptance: [],
+      }),
+      taskContract("T-002", {
+        title: "Dependent implementation",
+        dependsOn: ["T-001"],
+        depends_on: ["T-001"],
+      }),
+    ]);
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: { workspace: { cwd: fixture.cwd } },
+      generate: async () => {
+        throw new Error("generate should not run when dependency contract is invalid");
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "failed");
+    assert.deepEqual(result.skippedTasks, [
+      {
+        taskId: "T-001",
+        task_id: "T-001",
+        reason: "missing_acceptance",
+      },
+    ]);
+    assert.equal(result.failedTasks[0].taskId, "T-002");
+    assert.equal(result.failedTasks[0].error.code, "task.dependencies.unresolved");
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("executeRun does not unlock dependents for skipped dependencies without acceptance", async () => {
+  const cases = [
+    {
+      name: "read-only",
+      overrides: {
+        allowed_files: [],
+        allowedFiles: [],
+        acceptance: [],
+      },
+    },
+    {
+      name: "final-verification",
+      overrides: {
+        acceptance: [],
+        final_verification: true,
+        finalVerification: true,
+      },
+    },
+  ];
+
+  for (const item of cases) {
+    const fixture = await createFixture(`dependency-missing-acceptance-${item.name}`);
+    try {
+      const record = await createRunWithTasks(fixture.store, [
+        taskContract("T-001", {
+          title: `Invalid ${item.name} dependency contract`,
+          ...item.overrides,
+        }),
+        taskContract("T-002", {
+          title: "Dependent implementation",
+          dependsOn: ["T-001"],
+          depends_on: ["T-001"],
+        }),
+      ]);
+
+      const result = await executeRun({
+        runId: record.runId,
+        store: fixture.store,
+        verify: false,
+        runtimeOptions: { workspace: { cwd: fixture.cwd } },
+        generate: async () => {
+          throw new Error(`generate should not run after invalid ${item.name} dependency`);
+        },
+        createReport: () => ({ schema: "ai-coding-runtime.report" }),
+      });
+
+      assert.equal(result.status, "failed");
+      assert.equal(result.skippedTasks[0].taskId, "T-001");
+      assert.equal(result.skippedTasks[0].reason, "missing_acceptance");
+      assert.equal(result.failedTasks[0].taskId, "T-002");
+      assert.equal(result.failedTasks[0].error.code, "task.dependencies.unresolved");
+    } finally {
+      await fixture.cleanup();
+    }
+  }
+});
+
+test("executeRun escalates tier and retries after worker failure", async () => {
+  const fixture = await createFixture("tier-escalation-retry");
+  try {
+    await writeFile(join(fixture.cwd, "src", "app.js"), "export const value = 1;\n", "utf8");
+    const record = await createRunWithTasks(
+      fixture.store,
+      [
+        taskContract("T-001", {
+          modelTier: "standard",
+          model_tier: "standard",
+          routing: {
+            selected_model: { provider: "local", model: "standard-worker", tier: "standard" },
+            selectedModel: { provider: "local", model: "standard-worker", tier: "standard" },
+          },
+        }),
+      ],
+      {
+        modelRegistry: [
+          { provider: "local", model: "standard-worker", tier: "standard" },
+          { provider: "local", model: "premium-worker", tier: "premium" },
+        ],
+        model_registry: [
+          { provider: "local", model: "standard-worker", tier: "standard" },
+          { provider: "local", model: "premium-worker", tier: "premium" },
+        ],
+      }
+    );
+    const models = [];
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: { workspace: { cwd: fixture.cwd } },
+      generate: async (request) => {
+        models.push(request.model);
+        const patch = patchFor("src/app.js", "export const value = 1;", "export const value = 2;");
+        if (request.model === "standard-worker") {
+          const response = modelResponse(request, { patch });
+          response.text = JSON.stringify({
+            ...workerResult({ patch }),
+            acceptance: {},
+          });
+          return response;
+        }
+
+        return modelResponse(request, { patch });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.deepEqual(models, ["standard-worker", "premium-worker"]);
+    assert.equal(result.executedTasks[0].taskId, "T-001");
+    assert.equal(result.executedTasks[0].modelTier, "premium");
+    assert.equal(result.executedTasks[0].attemptCount, 2);
+    assert.deepEqual(result.executedTasks[0].attempts.map((attempt) => attempt.status), [
+      "failed",
+      "applied",
+    ]);
+    assert.equal(result.failedTasks.length, 0);
+    assert.equal(await readFile(join(fixture.cwd, "src", "app.js"), "utf8"), "export const value = 2;\n");
+
+    const updated = await fixture.store.readRecord(record.runId);
+    assert.equal(updated.workerAttempts.length, 2);
+    assert.equal(updated.workerAttempts[0].status, "failed");
+    assert.equal(updated.workerAttempts[1].status, "applied");
+    assert.ok(updated.events.some((event) => event.type === "task.execution.escalated"));
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("executeRun honors tierOrder inside snake-case escalation_policy", async () => {
+  const fixture = await createFixture("snake-escalation-policy-tier-order");
+  try {
+    await writeFile(join(fixture.cwd, "src", "app.js"), "export const value = 1;\n", "utf8");
+    const record = await createRunWithTasks(
+      fixture.store,
+      [
+        taskContract("T-001", {
+          modelTier: "cheap",
+          model_tier: "cheap",
+          routing: {
+            selected_model: { provider: "local", model: "cheap-worker", tier: "cheap" },
+            selectedModel: { provider: "local", model: "cheap-worker", tier: "cheap" },
+          },
+        }),
+      ],
+      {
+        escalationPolicy: undefined,
+        escalation_policy: {
+          tierOrder: ["cheap", "premium"],
+        },
+        modelRegistry: [
+          { provider: "local", model: "cheap-worker", tier: "cheap" },
+          { provider: "local", model: "standard-worker", tier: "standard" },
+          { provider: "local", model: "premium-worker", tier: "premium" },
+        ],
+      }
+    );
+    const models = [];
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: { workspace: { cwd: fixture.cwd } },
+      generate: async (request) => {
+        models.push(request.model);
+        const patch = patchFor("src/app.js", "export const value = 1;", "export const value = 2;");
+        if (request.model === "cheap-worker") {
+          return {
+            provider: request.provider,
+            model: request.model,
+            text: "not json",
+            structuredOutput: null,
+            structured_output: null,
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            costEstimate: { currency: "USD", estimatedCost: 0 },
+            cost_estimate: { currency: "USD", estimated_cost: 0 },
+            finishReason: "stop",
+            finish_reason: "stop",
+            request: { durationMs: 1, duration_ms: 1 },
+          };
+        }
+
+        return modelResponse(request, { patch });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.deepEqual(models, ["cheap-worker", "premium-worker"]);
+    assert.equal(result.executedTasks[0].modelTier, "premium");
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("executeRun uses routing runtimeOptions for escalation models and tier order", async () => {
+  const fixture = await createFixture("runtime-options-routing-escalation");
+  try {
+    await writeFile(join(fixture.cwd, "src", "app.js"), "export const value = 1;\n", "utf8");
+    const record = await createRunWithTasks(fixture.store, [
+      taskContract("T-001", {
+        modelTier: "cheap",
+        model_tier: "cheap",
+        routing: {
+          selected_model: { provider: "local", model: "cheap-worker", tier: "cheap" },
+          selectedModel: { provider: "local", model: "cheap-worker", tier: "cheap" },
+        },
+      }),
+    ]);
+    const models = [];
+
+    const result = await executeRun({
+      runId: record.runId,
+      store: fixture.store,
+      verify: false,
+      runtimeOptions: {
+        workspace: { cwd: fixture.cwd },
+        routing: {
+          escalationPolicy: {
+            tierOrder: ["cheap", "premium"],
+          },
+          modelRegistry: [
+            { provider: "local", model: "cheap-worker", tier: "cheap" },
+            { provider: "local", model: "premium-runtime-worker", tier: "premium" },
+          ],
+        },
+      },
+      generate: async (request) => {
+        models.push(request.model);
+        const patch = patchFor("src/app.js", "export const value = 1;", "export const value = 2;");
+        if (request.model === "cheap-worker") {
+          const response = modelResponse(request, { patch });
+          response.text = "not json";
+          return response;
+        }
+        if (request.model !== "premium-runtime-worker") {
+          throw new Error(`unexpected model ${request.model}`);
+        }
+
+        return modelResponse(request, { patch });
+      },
+      createReport: () => ({ schema: "ai-coding-runtime.report" }),
+    });
+
+    assert.equal(result.status, "verification_skipped");
+    assert.deepEqual(models, ["cheap-worker", "premium-runtime-worker"]);
+    assert.equal(result.executedTasks[0].model, "premium-runtime-worker");
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 
 test("executeRun includes allowed file contents in the worker prompt", async () => {
   const fixture = await createFixture("prompt-context");
@@ -542,7 +887,7 @@ async function createFixture(name) {
   };
 }
 
-async function createRunWithTasks(store, tasks) {
+async function createRunWithTasks(store, tasks, planOverrides = {}) {
   const plan = createRuntimePlan({ request: "Plan only: inspect project structure without modifying files." });
   const record = await store.createRecord(plan);
   return store.updateRecord(record.runId, (current) => ({
@@ -556,6 +901,7 @@ async function createRunWithTasks(store, tasks) {
       tasks,
       taskGraph: { ...current.plan.taskGraph, tasks },
       task_graph: { ...current.plan.task_graph, tasks },
+      ...planOverrides,
     },
   }));
 }
