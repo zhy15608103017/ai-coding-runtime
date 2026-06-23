@@ -326,6 +326,223 @@ test("runSupervisorReview rejects provider JSON missing required evidence fields
   assert.equal(review.errors[0].code, "supervisor.review.invalid_response");
 });
 
+test("runSupervisorReview normalizes richer provider JSON into a passing review", async () => {
+  const review = await runSupervisorReview({
+    record: {
+      request: "Implement Phase 7",
+      plan: { tasks: [{ task_id: "T-001", title: "Verify", risk: "medium" }] },
+    },
+    verification: {
+      commands: [{ name: "git-diff-check", status: "passed", exitCode: 0 }],
+      acceptance: { status: "passed" },
+    },
+    config: {
+      provider: "test-provider",
+      model: "test-model",
+      requiredForRisk: ["medium"],
+      generate: async () => ({
+        provider: "test-provider",
+        model: "test-model",
+        text: JSON.stringify({
+          status: "approved",
+          summary: "README.md only was updated as requested.",
+          requirementAlignment: {
+            request: "Only modify README.md.",
+            assessment: "Aligned with the request.",
+          },
+          diffRisk: {
+            level: "low",
+            rationale: "Documentation-only change.",
+          },
+          verificationEvidence: [
+            { check: "git-diff-check", result: "passed", exitCode: 0 },
+            { check: "test", result: "passed", exitCode: 0 },
+          ],
+          blockingIssues: [],
+        }),
+      }),
+    },
+  });
+
+  assert.equal(review.status, "passed");
+  assert.match(review.requirementAlignment, /Aligned with the request/);
+  assert.match(review.diffRisk, /Documentation-only change/);
+  assert.match(review.verificationEvidence, /git-diff-check/);
+});
+
+test("runSupervisorReview accepts pass as a successful supervisor status alias", async () => {
+  const review = await runSupervisorReview({
+    record: {
+      request: "Implement Phase 7",
+      plan: { tasks: [{ task_id: "T-001", title: "Verify", risk: "medium" }] },
+    },
+    verification: {
+      commands: [{ name: "git-diff-check", status: "passed", exitCode: 0 }],
+      acceptance: { status: "passed" },
+    },
+    config: {
+      provider: "test-provider",
+      model: "test-model",
+      requiredForRisk: ["medium"],
+      generate: async () => ({
+        provider: "test-provider",
+        model: "test-model",
+        text: JSON.stringify({
+          status: "pass",
+          summary: "Review passed.",
+          requirementAlignment: "Aligned.",
+          diffRisk: "Low risk.",
+          verificationEvidence: "Checks passed.",
+          blockingIssues: [],
+        }),
+      }),
+    },
+  });
+
+  assert.equal(review.status, "passed");
+});
+
+test("runSupervisorReview omits responseSchema for openai-compatible providers by default", async () => {
+  let seenRequest = null;
+  const review = await runSupervisorReview({
+    record: {
+      request: "Implement Phase 7",
+      plan: { tasks: [{ task_id: "T-001", title: "Verify", risk: "medium" }] },
+    },
+    verification: {
+      commands: [{ name: "git-diff-check", status: "passed", exitCode: 0 }],
+      acceptance: { status: "passed" },
+    },
+    config: {
+      provider: "openai-compatible",
+      model: "gpt-test",
+      requiredForRisk: ["medium"],
+      generate: async (request) => {
+        seenRequest = request;
+        return {
+          provider: "openai-compatible",
+          model: "gpt-test",
+          text: JSON.stringify({
+            status: "passed",
+            summary: "Review passed.",
+            requirementAlignment: "Aligned.",
+            diffRisk: "Low risk.",
+            verificationEvidence: "Checks passed.",
+            blockingIssues: [],
+          }),
+        };
+      },
+    },
+  });
+
+  assert.equal(review.status, "passed");
+  assert.ok(seenRequest);
+  assert.equal(seenRequest.responseSchema, undefined);
+});
+
+test("runSupervisorReview accepts boolean approved aliases", async () => {
+  const review = await runSupervisorReview({
+    record: {
+      request: "Implement Phase 7",
+      plan: { tasks: [{ task_id: "T-001", title: "Verify", risk: "medium" }] },
+    },
+    verification: {
+      commands: [{ name: "git-diff-check", status: "passed", exitCode: 0 }],
+      acceptance: { status: "passed" },
+    },
+    config: {
+      provider: "test-provider",
+      model: "test-model",
+      requiredForRisk: ["medium"],
+      generate: async () => ({
+        provider: "test-provider",
+        model: "test-model",
+        text: JSON.stringify({
+          approved: true,
+          summary: "Review passed.",
+          requirementAlignment: "Aligned.",
+          diffRisk: "Low risk.",
+          verificationEvidence: "Checks passed.",
+          blockingIssues: [],
+        }),
+      }),
+    },
+  });
+
+  assert.equal(review.status, "passed");
+});
+
+test("runSupervisorReview preserves structured blocking issues as blocking failures", async () => {
+  const review = await runSupervisorReview({
+    record: {
+      request: "Implement Phase 7",
+      plan: { tasks: [{ task_id: "T-001", title: "Verify", risk: "medium" }] },
+    },
+    verification: {
+      commands: [{ name: "git-diff-check", status: "passed", exitCode: 0 }],
+      acceptance: { status: "passed" },
+    },
+    config: {
+      provider: "test-provider",
+      model: "test-model",
+      requiredForRisk: ["medium"],
+      generate: async () => ({
+        provider: "test-provider",
+        model: "test-model",
+        text: JSON.stringify({
+          status: "passed",
+          summary: "Review found a blocker.",
+          requirementAlignment: "Aligned.",
+          diffRisk: "Low risk.",
+          verificationEvidence: "Checks passed.",
+          blockingIssues: [
+            {
+              title: "Clarify wording",
+              impact: "Current sentence is ambiguous.",
+            },
+          ],
+        }),
+      }),
+    },
+  });
+
+  assert.equal(review.status, "failed");
+  assert.equal(review.blockingIssues.length, 1);
+  assert.match(review.blockingIssues[0], /Clarify wording/);
+});
+
+test("runSupervisorReview rejects passed responses that omit blockingIssues", async () => {
+  const review = await runSupervisorReview({
+    record: {
+      request: "Implement Phase 7",
+      plan: { tasks: [{ task_id: "T-001", title: "Verify", risk: "medium" }] },
+    },
+    verification: {
+      commands: [{ name: "git-diff-check", status: "passed", exitCode: 0 }],
+      acceptance: { status: "passed" },
+    },
+    config: {
+      provider: "test-provider",
+      model: "test-model",
+      requiredForRisk: ["medium"],
+      generate: async () => ({
+        provider: "test-provider",
+        model: "test-model",
+        text: JSON.stringify({
+          status: "passed",
+          summary: "Review passed.",
+          requirementAlignment: "Aligned.",
+          diffRisk: "Low risk.",
+          verificationEvidence: "Checks passed.",
+        }),
+      }),
+    },
+  });
+
+  assert.equal(review.status, "failed");
+  assert.equal(review.errors[0].code, "supervisor.review.invalid_response");
+});
+
 test("runSupervisorReview requires provider and model", async () => {
   const modelOnlyReview = await runSupervisorReview({
     record: {

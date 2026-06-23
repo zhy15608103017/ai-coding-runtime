@@ -72,15 +72,9 @@ export async function runSupervisorReview({ record = {}, verification = {}, conf
     });
   }
 
-  const response = await config.generate({
-    provider: config.provider,
-    model: config.model,
-    prompt,
-    responseSchema: SUPERVISOR_REVIEW_SCHEMA,
-    temperature: 0,
-    maxTokens: config.maxTokens ?? config.max_tokens ?? 1024,
-    timeoutMs: config.timeoutMs ?? config.timeout_ms,
-  });
+  const response = await config.generate(
+    createSupervisorGenerateRequest({ config, prompt })
+  );
 
   return normalizeSupervisorResponse({ response, prompt });
 }
@@ -130,7 +124,8 @@ function normalizeSupervisorResponse({ response = {}, prompt }) {
     });
   }
 
-  const validation = validateSupervisorOutput(output);
+  const normalizedOutput = normalizeSupervisorOutput(output);
+  const validation = validateSupervisorOutput(normalizedOutput);
   if (!validation.valid) {
     return failedSupervisorReview({
       code: "supervisor.review.invalid_response",
@@ -141,22 +136,20 @@ function normalizeSupervisorResponse({ response = {}, prompt }) {
     });
   }
 
-  const blockingIssues = Array.isArray(output.blockingIssues)
-    ? output.blockingIssues
-    : output.blocking_issues ?? [];
-  const status = output.status === "passed" && blockingIssues.length === 0 ? "passed" : "failed";
+  const blockingIssues = normalizedOutput.blockingIssues;
+  const status = normalizedOutput.status === "passed" && blockingIssues.length === 0 ? "passed" : "failed";
 
   return {
     name: "final-supervisor-review",
     status,
     required: true,
-    summary: output.summary ?? "",
-    requirementAlignment: output.requirementAlignment ?? output.requirement_alignment ?? "",
-    requirement_alignment: output.requirementAlignment ?? output.requirement_alignment ?? "",
-    diffRisk: output.diffRisk ?? output.diff_risk ?? "",
-    diff_risk: output.diffRisk ?? output.diff_risk ?? "",
-    verificationEvidence: output.verificationEvidence ?? output.verification_evidence ?? "",
-    verification_evidence: output.verificationEvidence ?? output.verification_evidence ?? "",
+    summary: normalizedOutput.summary,
+    requirementAlignment: normalizedOutput.requirementAlignment,
+    requirement_alignment: normalizedOutput.requirementAlignment,
+    diffRisk: normalizedOutput.diffRisk,
+    diff_risk: normalizedOutput.diffRisk,
+    verificationEvidence: normalizedOutput.verificationEvidence,
+    verification_evidence: normalizedOutput.verificationEvidence,
     blockingIssues,
     blocking_issues: blockingIssues,
     provider: response.provider ?? null,
@@ -168,15 +161,54 @@ function normalizeSupervisorResponse({ response = {}, prompt }) {
   };
 }
 
+function normalizeSupervisorOutput(output = {}) {
+  const blockingIssuesPresent =
+    Object.prototype.hasOwnProperty.call(output, "blockingIssues") ||
+    Object.prototype.hasOwnProperty.call(output, "blocking_issues");
+
+  return {
+    status: normalizeSupervisorStatus(output),
+    summary: normalizeSupervisorText(output.summary),
+    requirementAlignment: normalizeSupervisorText(
+      output.requirementAlignment ?? output.requirement_alignment
+    ),
+    diffRisk: normalizeSupervisorText(output.diffRisk ?? output.diff_risk),
+    verificationEvidence: normalizeSupervisorText(
+      output.verificationEvidence ?? output.verification_evidence
+    ),
+    blockingIssuesPresent,
+    blockingIssues: normalizeBlockingIssues(output.blockingIssues ?? output.blocking_issues, {
+      present: blockingIssuesPresent,
+    }),
+  };
+}
+
+function createSupervisorGenerateRequest({ config = {}, prompt }) {
+  const request = {
+    provider: config.provider,
+    model: config.model,
+    prompt,
+    temperature: 0,
+    maxTokens: config.maxTokens ?? config.max_tokens ?? 1024,
+    timeoutMs: config.timeoutMs ?? config.timeout_ms,
+  };
+
+  if (shouldIncludeSupervisorResponseSchema(config)) {
+    request.responseSchema = SUPERVISOR_REVIEW_SCHEMA;
+  }
+
+  return request;
+}
+
 function validateSupervisorOutput(output) {
   const errors = [];
   const stringFields = [
     ["summary", output.summary],
-    ["requirementAlignment", output.requirementAlignment ?? output.requirement_alignment],
-    ["diffRisk", output.diffRisk ?? output.diff_risk],
-    ["verificationEvidence", output.verificationEvidence ?? output.verification_evidence],
+    ["requirementAlignment", output.requirementAlignment],
+    ["diffRisk", output.diffRisk],
+    ["verificationEvidence", output.verificationEvidence],
   ];
-  const blockingIssues = output.blockingIssues ?? output.blocking_issues;
+  const blockingIssues = output.blockingIssues;
 
   if (output.status !== "passed" && output.status !== "failed") {
     errors.push("status");
@@ -188,7 +220,11 @@ function validateSupervisorOutput(output) {
     }
   }
 
-  if (!Array.isArray(blockingIssues) || blockingIssues.some((issue) => typeof issue !== "string")) {
+  if (
+    output.blockingIssuesPresent !== true ||
+    !Array.isArray(blockingIssues) ||
+    blockingIssues.some((issue) => typeof issue !== "string")
+  ) {
     errors.push("blockingIssues");
   }
 
@@ -196,6 +232,89 @@ function validateSupervisorOutput(output) {
     valid: errors.length === 0,
     errors,
   };
+}
+
+function normalizeSupervisorStatus(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (value.approved === true || value.pass === true || value.passed === true || value.ok === true || value.success === true) {
+      return "passed";
+    }
+    if (value.approved === false || value.pass === false || value.passed === false || value.failed === true || value.blocked === true) {
+      return "failed";
+    }
+    return normalizeSupervisorStatus(value.status);
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["pass", "passed", "approved", "ok", "success"].includes(normalized)) {
+    return "passed";
+  }
+  if (["failed", "rejected", "blocked", "changes_requested", "needs_changes"].includes(normalized)) {
+    return "failed";
+  }
+  return value;
+}
+
+function shouldIncludeSupervisorResponseSchema(config = {}) {
+  const explicit =
+    config.responseSchema ??
+    config.response_schema;
+
+  if (typeof explicit === "boolean") {
+    return explicit;
+  }
+
+  return config.provider !== "openai-compatible";
+}
+
+function normalizeSupervisorText(value) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (Array.isArray(value) || (value && typeof value === "object")) {
+    return JSON.stringify(value);
+  }
+
+  return "";
+}
+
+function normalizeBlockingIssues(value, { present = false } = {}) {
+  if (!present) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string") {
+          return item.trim();
+        }
+        if (item && typeof item === "object") {
+          return JSON.stringify(item);
+        }
+        if (item === null || item === undefined) {
+          return "";
+        }
+        return String(item).trim();
+      })
+      .filter((item) => item.length > 0);
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized.length > 0 ? [normalized] : [];
+  }
+
+  if (value && typeof value === "object") {
+    return [JSON.stringify(value)];
+  }
+
+  return null;
 }
 
 function failedSupervisorReview({ code, message, prompt, provider = null, model = null }) {
