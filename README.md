@@ -2,7 +2,7 @@
 
 AI Coding Runtime is a local-first orchestration layer for AI coding tasks.
 
-V0 currently covers the Phase 1 runtime skeleton through Phase 10 policy, safety, and team mode:
+V0 currently covers the Phase 1 runtime skeleton through Phase 11.0 local shadow learning telemetry:
 
 - create a structured runtime plan from a user request
 - classify tasks into `cheap`, `standard`, and `premium` model tiers
@@ -28,8 +28,9 @@ V0 currently covers the Phase 1 runtime skeleton through Phase 10 policy, safety
 - provide setup guides, MCP configs, prompt samples, and smoke-test checklists for Codex Desktop, Codex CLI, Cursor, and OpenCode
 - generate Phase 9 reports with changed files, per-task cost attribution, routing and escalation reasons, failure categories, trace viewer data, export metadata, and historical model reliability metrics
 - enforce Phase 10 policy config for budget aliases, risk gates, workspace file policy, verification command allowlists, secret redaction, and completed-run audit export
+- expose Phase 11.0 report-derived learning profiles and shadow recommendations without changing live routing decisions
 
-V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, explicitly execute dependency-aware worker tasks with configured tier escalation and retry, apply validated text patches, run Phase 7 verification, connect to host tools through Phase 8 integration guides, produce Phase 9 cost-aware run reports, and enforce Phase 10 team policy controls. `runtime_run` remains plan-only; worker execution happens only through the explicit execute surfaces.
+V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, explicitly execute dependency-aware worker tasks with configured tier escalation and retry, apply validated text patches, run Phase 7 verification, connect to host tools through Phase 8 integration guides, produce Phase 9 cost-aware run reports, enforce Phase 10 team policy controls, and surface Phase 11.0 local learning profiles for shadow-only routing recommendations. `runtime_run` remains plan-only; worker execution happens only through the explicit execute surfaces, and routing history export/import is not complete yet.
 Runs that include medium or high risk tasks are stored as `approval_required`. V0 provides a minimal approval input through CLI, HTTP, and MCP; approved runs can be executed explicitly, and later phases can add richer approval UI.
 Phase 4 routing is deterministic: file-editing tasks route to at least `standard`, final verification routes to `premium`, and failed low-tier attempts can be represented with escalation trace records.
 Explicit read-only planning requests such as `plan only`, `read-only`, or `不修改文件` produce low-risk plans that can be stored as `planned` without an approval gate.

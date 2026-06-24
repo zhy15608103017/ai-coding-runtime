@@ -3,16 +3,33 @@ import { DEFAULT_POLICY_CONFIG, normalizePolicyConfig } from "./policy.js";
 const EXCLUDED_STATUSES = new Set([
   "planned",
   "approval_required",
+  "approval-pending",
+  "approval_pending",
   "approved",
   "verifying",
   "canceled",
+  "verification-skipped",
   "verification_skipped",
+  "approval-rejected",
   "approval_rejected",
 ]);
 
 const TIER_ORDER = ["cheap", "standard", "premium"];
+const RECOMMENDATION_BUCKET_TYPE = "task_type_difficulty_risk_verification_tier";
 
 const BUCKET_BUILDERS = [
+  {
+    type: RECOMMENDATION_BUCKET_TYPE,
+    key: (sample) => ({
+      taskType: sample.taskType,
+      task_type: sample.taskType,
+      difficulty: sample.difficulty,
+      risk: sample.risk,
+      verification: sample.verification,
+      modelTier: sample.plannedTier,
+      model_tier: sample.plannedTier,
+    }),
+  },
   {
     type: "task_type_tier",
     key: (sample) => ({
@@ -81,8 +98,8 @@ export function createLearningProfile(
   const samples = [];
 
   for (const record of uniqueRecords) {
-    const outcome = getExplicitVerificationOutcome(record);
-    if (!outcome) {
+    const runOutcome = getExplicitVerificationOutcome(record);
+    if (!runOutcome) {
       ignoredSummary.push({
         runId: record?.runId ?? null,
         run_id: record?.runId ?? null,
@@ -92,14 +109,15 @@ export function createLearningProfile(
     }
 
     const routeByTask = new Map(
-      (record.plan?.routingTrace ?? record.plan?.routing_trace ?? []).map((route) => [
-        route.task_id,
-        route,
-      ])
+      (record.plan?.routingTrace ?? record.plan?.routing_trace ?? [])
+        .map((route) => [route.task_id ?? route.taskId, route])
+        .filter(([taskId]) => taskId)
     );
     const attemptsByTask = groupByTask(record.workerAttempts ?? record.worker_attempts ?? []);
     const callsByTask = groupModelCallsByTask(record.modelCalls ?? record.model_calls ?? []);
     const escalationEventsByTask = groupEscalationEventsByTask(record.events ?? []);
+    const taskOutcomes = getTaskVerificationOutcomes(record);
+    const taskCount = Array.isArray(record.plan?.tasks) ? record.plan.tasks.length : 0;
 
     for (const task of record.plan?.tasks ?? []) {
       const taskId = task.task_id ?? task.id;
@@ -109,6 +127,8 @@ export function createLearningProfile(
       const attempts = attemptsByTask.get(taskId) ?? [];
       const calls = callsByTask.get(taskId) ?? [];
       if (isPureFinalReviewTask(task, attempts, calls)) continue;
+      const outcome = getTaskOutcome({ taskId, taskOutcomes, runOutcome, taskCount });
+      if (!outcome) continue;
 
       samples.push(
         createSample({
@@ -171,7 +191,7 @@ function disabledProfile() {
 function createSample({ record, task, route, outcome, attempts, calls, escalationEvents }) {
   const taskId = task.task_id ?? task.id;
   const selectedModel = normalizeSelectedModel(route?.selected_model ?? route?.selectedModel);
-  const plannedTier = route?.model_tier ?? task.model_tier ?? task.modelTier ?? "unknown";
+  const plannedTier = route?.model_tier ?? route?.modelTier ?? task.model_tier ?? task.modelTier ?? "unknown";
   const attemptedTiers = uniqueStringsInOrder([
     plannedTier,
     ...attempts.map((attempt) => attempt.modelTier ?? attempt.model_tier).filter(Boolean),
@@ -235,6 +255,32 @@ function getExplicitVerificationOutcome(record) {
   const latest = Array.isArray(record.verification) ? record.verification.at(-1) : null;
   if (latest?.status === "passed" || latest?.status === "failed") return latest.status;
   return null;
+}
+
+function getTaskVerificationOutcomes(record) {
+  const outcomes = new Map();
+  const latest = Array.isArray(record?.verification) ? record.verification.at(-1) : null;
+  const acceptance = latest?.acceptance ?? latest?.taskAcceptance ?? latest?.task_acceptance;
+  const taskReviews = Array.isArray(acceptance?.tasks)
+    ? acceptance.tasks
+    : Array.isArray(acceptance?.taskResults)
+      ? acceptance.taskResults
+      : [];
+
+  for (const review of taskReviews) {
+    const taskId = review.taskId ?? review.task_id ?? review.id;
+    if (!taskId) continue;
+    if (review.status === "passed" || review.status === "failed") {
+      outcomes.set(taskId, review.status);
+    }
+  }
+
+  return outcomes;
+}
+
+function getTaskOutcome({ taskId, taskOutcomes, runOutcome, taskCount }) {
+  if (taskOutcomes.has(taskId)) return taskOutcomes.get(taskId);
+  return taskCount === 1 ? runOutcome : null;
 }
 
 function uniqueRecordsById(records) {
@@ -434,7 +480,7 @@ function addSampleToBucket(bucket, sample) {
 }
 
 function createRecommendations({ buckets, policy }) {
-  const taskTierBuckets = buckets.filter((bucket) => bucket.bucketType === "task_type_tier");
+  const taskTierBuckets = buckets.filter((bucket) => bucket.bucketType === RECOMMENDATION_BUCKET_TYPE);
   const recommendations = [];
 
   for (const bucket of taskTierBuckets) {
@@ -482,7 +528,7 @@ function cheaperRecommendation(bucket, buckets, policy) {
     bucket: cheaper,
     fromTier,
     toTier: cheaper.modelTier,
-    reason: `${cheaper.taskType} has ${cheaper.successes}/${cheaper.sampleCount} successful ${cheaper.modelTier} samples with low retry and escalation rates.`,
+    reason: `${describeBucketScope(cheaper)} has ${cheaper.successes}/${cheaper.sampleCount} successful ${cheaper.modelTier} samples with low retry and escalation rates.`,
   });
 }
 
@@ -501,7 +547,7 @@ function strongerRecommendation(bucket, policy) {
     bucket,
     fromTier: bucket.modelTier,
     toTier,
-    reason: `${bucket.taskType}/${bucket.modelTier} failure or escalation rate is high enough to consider ${toTier}.`,
+    reason: `${describeBucketScope(bucket)}/${bucket.modelTier} failure or escalation rate is high enough to consider ${toTier}.`,
   });
 }
 
@@ -529,6 +575,9 @@ function recommendation({ action, bucket, fromTier, toTier, reason }) {
     action,
     taskType: bucket.taskType,
     task_type: bucket.taskType,
+    difficulty: bucket.difficulty ?? null,
+    risk: bucket.risk ?? null,
+    verification: bucket.verification ?? null,
     fromTier,
     from_tier: fromTier,
     toTier,
@@ -546,8 +595,11 @@ function recommendation({ action, bucket, fromTier, toTier, reason }) {
     escalation_rate: bucket.escalationRate,
     reason,
     evidence: {
+      bucketType: bucket.bucketType,
+      bucket_type: bucket.bucketType,
       bucketKey: bucket.key,
       bucket_key: bucket.key,
+      scope: describeBucketScope(bucket),
       successes: bucket.successes,
       failures: bucket.failures,
       verificationFailureCount: bucket.verificationFailureCount,
@@ -573,10 +625,26 @@ function bestCheaperBucket(bucket, buckets) {
   return (
     cheaperTiers
       .map((tier) =>
-        buckets.find((candidate) => candidate.taskType === bucket.taskType && candidate.modelTier === tier)
+        buckets.find((candidate) => isComparableBucket(candidate, bucket) && candidate.modelTier === tier)
       )
       .find(Boolean) ?? null
   );
+}
+
+function isComparableBucket(candidate, bucket) {
+  return (
+    candidate.bucketType === bucket.bucketType &&
+    candidate.taskType === bucket.taskType &&
+    candidate.difficulty === bucket.difficulty &&
+    candidate.risk === bucket.risk &&
+    candidate.verification === bucket.verification
+  );
+}
+
+function describeBucketScope(bucket) {
+  return [bucket.taskType, bucket.difficulty, bucket.risk, bucket.verification]
+    .filter((value) => typeof value === "string" && value.length > 0)
+    .join("/");
 }
 
 function nextTier(tier) {

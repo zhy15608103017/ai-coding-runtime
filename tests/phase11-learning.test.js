@@ -122,6 +122,31 @@ test("Phase 11 learning extracts privacy-safe samples from verified runs", () =>
   assert.doesNotMatch(serialized, /raw model response/);
 });
 
+test("Phase 11 learning reads camelCase routing trace fields", () => {
+  const record = learningRecord({ runId: "run_camel_route", tier: "cheap" });
+  const task = record.plan.tasks[0];
+  delete task.routing;
+  delete task.model_tier;
+  delete task.modelTier;
+  record.plan.routingTrace = [
+    {
+      taskId: "T-001",
+      modelTier: "standard",
+      selectedModel: { provider: "openai-compatible", model: "gpt-camel", tier: "standard" },
+      reason: "camelCase routing trace",
+      costHint: { estimatedUsdPerCall: 0.01 },
+      escalationTriggers: [],
+    },
+  ];
+
+  const profile = createLearningProfile([record], { policy: normalizePolicyConfig() });
+
+  assert.equal(profile.eligibleSamples, 1);
+  assert.equal(profile.samples[0].plannedTier, "standard");
+  assert.equal(profile.samples[0].selectedModel, "gpt-camel");
+  assert.equal(profile.samples[0].selectedTier, "standard");
+});
+
 test("Phase 11 learning ignores records without explicit verification outcomes", () => {
   const passed = learningRecord({ runId: "run_passed" });
   const planned = learningRecord({ runId: "run_planned", status: "planned", verificationStatus: null });
@@ -136,18 +161,53 @@ test("Phase 11 learning ignores records without explicit verification outcomes",
     status: "verification_skipped",
     verificationStatus: "skipped",
   });
-
-  const profile = createLearningProfile([passed, planned, approval, canceled, skipped], {
-    policy: normalizePolicyConfig(),
+  const hyphenApprovalPending = learningRecord({
+    runId: "run_hyphen_pending",
+    status: "approval-pending",
+    verificationStatus: "passed",
+  });
+  const hyphenApprovalRejected = learningRecord({
+    runId: "run_hyphen_rejected",
+    status: "approval-rejected",
+    verificationStatus: "failed",
+  });
+  const hyphenVerificationSkipped = learningRecord({
+    runId: "run_hyphen_skipped",
+    status: "verification-skipped",
+    verificationStatus: "passed",
   });
 
-  assert.equal(profile.recordsScanned, 5);
+  const profile = createLearningProfile(
+    [
+      passed,
+      planned,
+      approval,
+      canceled,
+      skipped,
+      hyphenApprovalPending,
+      hyphenApprovalRejected,
+      hyphenVerificationSkipped,
+    ],
+    {
+      policy: normalizePolicyConfig(),
+    }
+  );
+
+  assert.equal(profile.recordsScanned, 8);
   assert.equal(profile.eligibleSamples, 1);
-  assert.equal(profile.ignoredRecords, 4);
-  assert.equal(profile.ignored_records, 4);
+  assert.equal(profile.ignoredRecords, 7);
+  assert.equal(profile.ignored_records, 7);
   assert.deepEqual(
     profile.ignoredSummary.map((item) => item.reason).sort(),
-    ["approval_required", "canceled", "planned", "verification_skipped"]
+    [
+      "approval-pending",
+      "approval-rejected",
+      "approval_required",
+      "canceled",
+      "planned",
+      "verification-skipped",
+      "verification_skipped",
+    ]
   );
 });
 
@@ -205,6 +265,20 @@ test("Phase 11 learning aggregates task, tier, provider, retry, escalation, and 
   assert.ok(providerBucket);
 });
 
+test("Phase 11 learning attributes multi-task outcomes from task acceptance evidence", () => {
+  const record = multiTaskLearningRecord();
+
+  const profile = createLearningProfile([record], { policy: normalizePolicyConfig() });
+  const passSample = profile.samples.find((sample) => sample.taskId === "T-pass");
+  const failSample = profile.samples.find((sample) => sample.taskId === "T-fail");
+  const skippedSample = profile.samples.find((sample) => sample.taskId === "T-skip");
+
+  assert.equal(profile.eligibleSamples, 2);
+  assert.equal(passSample.verificationStatus, "passed");
+  assert.equal(failSample.verificationStatus, "failed");
+  assert.equal(skippedSample, undefined);
+});
+
 test("Phase 11 learning recommends cheaper tiers only with enough successful cheaper samples", () => {
   const records = [
     ...Array.from({ length: 5 }, (_, index) =>
@@ -239,6 +313,43 @@ test("Phase 11 learning recommends cheaper tiers only with enough successful che
   assert.equal(recommendation.confidence, "low");
   assert.equal(recommendation.sampleCount, 5);
   assert.match(recommendation.reason, /cheap/i);
+});
+
+test("Phase 11 learning does not downgrade from unrelated easier history", () => {
+  const records = [
+    ...Array.from({ length: 5 }, (_, index) =>
+      learningRecord({
+        runId: `cheap_easy_${index}`,
+        tier: "cheap",
+        difficulty: "L1",
+        risk: "low",
+        verification: "easy",
+      })
+    ),
+    ...Array.from({ length: 5 }, (_, index) =>
+      learningRecord({
+        runId: `standard_harder_${index}`,
+        tier: "standard",
+        difficulty: "L3",
+        risk: "medium",
+        verification: "hard",
+      })
+    ),
+  ];
+
+  const profile = createLearningProfile(records, {
+    policy: normalizePolicyConfig({ learning: { minSamples: 5 } }),
+  });
+
+  assert.equal(
+    profile.recommendations.some(
+      (item) =>
+        item.action === "consider_cheaper_tier" &&
+        item.fromTier === "standard" &&
+        item.toTier === "cheap"
+    ),
+    false
+  );
 });
 
 test("Phase 11 learning recommends stronger tiers when failures or escalations are frequent", () => {
@@ -465,6 +576,76 @@ function learningRecord({
         ]
       : [],
     events,
+  };
+}
+
+function multiTaskLearningRecord() {
+  const base = learningRecord({
+    runId: "run_multi_task",
+    status: "verification_failed",
+    verificationStatus: "failed",
+  });
+  const tasks = [
+    taskForLearning({ taskId: "T-pass", difficulty: "L1", risk: "low", tier: "cheap" }),
+    taskForLearning({ taskId: "T-fail", difficulty: "L2", risk: "medium", tier: "standard" }),
+    taskForLearning({ taskId: "T-skip", difficulty: "L2", risk: "medium", tier: "standard" }),
+  ];
+
+  return {
+    ...base,
+    plan: {
+      ...base.plan,
+      tasks,
+      routingTrace: tasks.map((task) => task.routing),
+    },
+    workerAttempts: [
+      workerAttempt("T-pass", { acceptance: { "Task works": "Passed acceptance evidence." } }),
+      workerAttempt("T-fail", { status: "failed", applied: false, acceptance: {} }),
+    ],
+    modelCalls: [modelCall("T-pass", { tier: "cheap" }), modelCall("T-fail", { tier: "standard" })],
+    verification: [
+      {
+        ...base.verification[0],
+        status: "failed",
+        acceptance: {
+          name: "task-acceptance",
+          status: "failed",
+          tasks: [
+            { taskId: "T-pass", task_id: "T-pass", status: "passed" },
+            { taskId: "T-fail", task_id: "T-fail", status: "failed" },
+            { taskId: "T-skip", task_id: "T-skip", status: "skipped" },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+function taskForLearning({ taskId, difficulty, risk, tier }) {
+  return {
+    id: taskId,
+    task_id: taskId,
+    title: `Task ${taskId}`,
+    taskType: "implementation",
+    task_type: "implementation",
+    difficulty,
+    risk,
+    contextNeed: "medium",
+    context_need: "medium",
+    verification: "easy",
+    modelTier: tier,
+    model_tier: tier,
+    allowed_files: ["README.md"],
+    acceptance: ["Task works"],
+    finalVerification: false,
+    final_verification: false,
+    routing: {
+      task_id: taskId,
+      model_tier: tier,
+      selected_model: { provider: "openai-compatible", model: `${tier}-model`, tier },
+      reason: `${difficulty} default routing tier`,
+      escalation_triggers: [],
+    },
   };
 }
 
