@@ -10,6 +10,61 @@ const EXCLUDED_STATUSES = new Set([
   "approval_rejected",
 ]);
 
+const TIER_ORDER = ["cheap", "standard", "premium"];
+
+const BUCKET_BUILDERS = [
+  {
+    type: "task_type_tier",
+    key: (sample) => ({
+      taskType: sample.taskType,
+      task_type: sample.taskType,
+      modelTier: sample.plannedTier,
+      model_tier: sample.plannedTier,
+    }),
+  },
+  {
+    type: "task_type_difficulty_tier",
+    key: (sample) => ({
+      taskType: sample.taskType,
+      task_type: sample.taskType,
+      difficulty: sample.difficulty,
+      modelTier: sample.plannedTier,
+      model_tier: sample.plannedTier,
+    }),
+  },
+  {
+    type: "task_type_risk_tier",
+    key: (sample) => ({
+      taskType: sample.taskType,
+      task_type: sample.taskType,
+      risk: sample.risk,
+      modelTier: sample.plannedTier,
+      model_tier: sample.plannedTier,
+    }),
+  },
+  {
+    type: "task_type_verification_tier",
+    key: (sample) => ({
+      taskType: sample.taskType,
+      task_type: sample.taskType,
+      verification: sample.verification,
+      modelTier: sample.plannedTier,
+      model_tier: sample.plannedTier,
+    }),
+  },
+  {
+    type: "task_type_provider_model",
+    key: (sample) => ({
+      taskType: sample.taskType,
+      task_type: sample.taskType,
+      selectedProvider: sample.selectedProvider,
+      selected_provider: sample.selectedProvider,
+      selectedModel: sample.selectedModel,
+      selected_model: sample.selectedModel,
+    }),
+  },
+];
+
 export function createLearningProfile(
   records = [],
   { policy = DEFAULT_POLICY_CONFIG, now = new Date() } = {}
@@ -71,6 +126,8 @@ export function createLearningProfile(
 
   const generatedAt = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
   const warnings = learningPolicy.warnings ?? [];
+  const buckets = createBuckets(samples);
+  const recommendations = createRecommendations({ buckets, policy: learningPolicy });
 
   return {
     enabled: true,
@@ -89,8 +146,8 @@ export function createLearningProfile(
     ignoredSummary,
     ignored_summary: ignoredSummary,
     samples,
-    buckets: [],
-    recommendations: [],
+    buckets,
+    recommendations,
   };
 }
 
@@ -271,6 +328,262 @@ function sumEstimatedCost(calls) {
   );
 }
 
+function createBuckets(samples) {
+  const buckets = new Map();
+
+  for (const sample of samples) {
+    for (const builder of BUCKET_BUILDERS) {
+      const dimensions = builder.key(sample);
+      const key = `${builder.type}:${Object.values(dimensions).join(":")}`;
+      const current = buckets.get(key) ?? createEmptyBucket(builder.type, dimensions);
+      addSampleToBucket(current, sample);
+      buckets.set(key, current);
+    }
+  }
+
+  return [...buckets.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function createEmptyBucket(bucketType, dimensions) {
+  const key = `${bucketType}:${Object.values(dimensions).join(":")}`;
+  return {
+    key,
+    bucketType,
+    bucket_type: bucketType,
+    ...dimensions,
+    sampleCount: 0,
+    sample_count: 0,
+    successes: 0,
+    failures: 0,
+    successRate: 0,
+    success_rate: 0,
+    failureRate: 0,
+    failure_rate: 0,
+    retryCount: 0,
+    retry_count: 0,
+    retriedSampleCount: 0,
+    retried_sample_count: 0,
+    retryRate: 0,
+    retry_rate: 0,
+    escalationCount: 0,
+    escalation_count: 0,
+    escalationRate: 0,
+    escalation_rate: 0,
+    verificationFailureCount: 0,
+    verification_failure_count: 0,
+    verificationFailureRate: 0,
+    verification_failure_rate: 0,
+    malformedOutputCount: 0,
+    malformed_output_count: 0,
+    providerFailureCount: 0,
+    provider_failure_count: 0,
+    risks: [],
+    averageEstimatedCost: null,
+    average_estimated_cost: null,
+    totalEstimatedCost: 0,
+    total_estimated_cost: 0,
+    costSampleCount: 0,
+    cost_sample_count: 0,
+  };
+}
+
+function addSampleToBucket(bucket, sample) {
+  bucket.sampleCount += 1;
+  bucket.sample_count = bucket.sampleCount;
+  if (sample.verificationStatus === "passed") bucket.successes += 1;
+  if (sample.verificationStatus === "failed") bucket.failures += 1;
+  bucket.retryCount += sample.retryCount;
+  bucket.retry_count = bucket.retryCount;
+  if (sample.retryCount > 0) bucket.retriedSampleCount += 1;
+  bucket.retried_sample_count = bucket.retriedSampleCount;
+  if (sample.escalated) bucket.escalationCount += 1;
+  bucket.escalation_count = bucket.escalationCount;
+  if (sample.failureCategories.includes("verification_failure")) {
+    bucket.verificationFailureCount += 1;
+  }
+  if (sample.failureCategories.includes("malformed_output")) {
+    bucket.malformedOutputCount += 1;
+  }
+  if (sample.failureCategories.includes("provider_error")) {
+    bucket.providerFailureCount += 1;
+  }
+  bucket.verification_failure_count = bucket.verificationFailureCount;
+  bucket.malformed_output_count = bucket.malformedOutputCount;
+  bucket.provider_failure_count = bucket.providerFailureCount;
+
+  bucket.successRate = roundRatio(bucket.successes / bucket.sampleCount);
+  bucket.success_rate = bucket.successRate;
+  bucket.failureRate = roundRatio(bucket.failures / bucket.sampleCount);
+  bucket.failure_rate = bucket.failureRate;
+  bucket.retryRate = roundRatio(bucket.retriedSampleCount / bucket.sampleCount);
+  bucket.retry_rate = bucket.retryRate;
+  bucket.escalationRate = roundRatio(bucket.escalationCount / bucket.sampleCount);
+  bucket.escalation_rate = bucket.escalationRate;
+  bucket.verificationFailureRate = roundRatio(bucket.verificationFailureCount / bucket.sampleCount);
+  bucket.verification_failure_rate = bucket.verificationFailureRate;
+  bucket.risks = uniqueStrings([...bucket.risks, sample.risk]);
+
+  if (Number.isFinite(sample.estimatedCost)) {
+    bucket.totalEstimatedCost = roundCost(bucket.totalEstimatedCost + sample.estimatedCost);
+    bucket.total_estimated_cost = bucket.totalEstimatedCost;
+    bucket.costSampleCount += 1;
+    bucket.cost_sample_count = bucket.costSampleCount;
+    bucket.averageEstimatedCost = roundCost(bucket.totalEstimatedCost / bucket.costSampleCount);
+    bucket.average_estimated_cost = bucket.averageEstimatedCost;
+  }
+}
+
+function createRecommendations({ buckets, policy }) {
+  const taskTierBuckets = buckets.filter((bucket) => bucket.bucketType === "task_type_tier");
+  const recommendations = [];
+
+  for (const bucket of taskTierBuckets) {
+    const stronger = bucket.sampleCount >= policy.minSamples ? strongerRecommendation(bucket, policy) : null;
+    if (stronger) {
+      recommendations.push(stronger);
+      continue;
+    }
+
+    const cheaper = cheaperRecommendation(bucket, taskTierBuckets, policy);
+    if (cheaper) {
+      recommendations.push(cheaper);
+      continue;
+    }
+
+    const safetyHold = cheaperSafetyHold(bucket, taskTierBuckets);
+    if (safetyHold) {
+      recommendations.push(safetyHold);
+      continue;
+    }
+
+    if (bucket.sampleCount < policy.minSamples) {
+      recommendations.push(holdRecommendation(bucket, "sample size too small"));
+      continue;
+    }
+
+    recommendations.push(holdRecommendation(bucket, "signals are mixed or already optimal"));
+  }
+
+  return recommendations.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function cheaperRecommendation(bucket, buckets, policy) {
+  const fromTier = bucket.modelTier;
+  const cheaper = bestCheaperBucket(bucket, buckets);
+  if (!cheaper) return null;
+  if (bucket.risks.includes("high") || cheaper.risks.includes("high")) return null;
+  if (cheaper.sampleCount < policy.minSamples) return null;
+  if (cheaper.successRate < policy.cheapSuccessThreshold) return null;
+  if (cheaper.retryRate > policy.maxRetryRateForDowngrade) return null;
+  if (cheaper.escalationRate > policy.maxEscalationRateForDowngrade) return null;
+
+  return recommendation({
+    action: "consider_cheaper_tier",
+    bucket: cheaper,
+    fromTier,
+    toTier: cheaper.modelTier,
+    reason: `${cheaper.taskType} has ${cheaper.successes}/${cheaper.sampleCount} successful ${cheaper.modelTier} samples with low retry and escalation rates.`,
+  });
+}
+
+function strongerRecommendation(bucket, policy) {
+  const toTier = nextTier(bucket.modelTier);
+  if (!toTier) return null;
+  if (
+    bucket.failureRate < policy.strongerFailureThreshold &&
+    bucket.escalationRate < policy.strongerFailureThreshold
+  ) {
+    return null;
+  }
+
+  return recommendation({
+    action: "consider_stronger_tier",
+    bucket,
+    fromTier: bucket.modelTier,
+    toTier,
+    reason: `${bucket.taskType}/${bucket.modelTier} failure or escalation rate is high enough to consider ${toTier}.`,
+  });
+}
+
+function cheaperSafetyHold(bucket, buckets) {
+  const cheaper = bestCheaperBucket(bucket, buckets);
+  if (!cheaper) return null;
+  if (!bucket.risks.includes("high") && !cheaper.risks.includes("high")) return null;
+  return holdRecommendation(bucket, "safety policy blocks cheaper routing for high-risk history");
+}
+
+function holdRecommendation(bucket, reason) {
+  return recommendation({
+    action: "hold",
+    bucket,
+    fromTier: bucket.modelTier,
+    toTier: bucket.modelTier,
+    reason,
+  });
+}
+
+function recommendation({ action, bucket, fromTier, toTier, reason }) {
+  const confidence = confidenceFor(bucket);
+  return {
+    key: `${action}:${bucket.key}:${toTier}`,
+    action,
+    taskType: bucket.taskType,
+    task_type: bucket.taskType,
+    fromTier,
+    from_tier: fromTier,
+    toTier,
+    to_tier: toTier,
+    confidence,
+    sampleCount: bucket.sampleCount,
+    sample_count: bucket.sampleCount,
+    successRate: bucket.successRate,
+    success_rate: bucket.successRate,
+    failureRate: bucket.failureRate,
+    failure_rate: bucket.failureRate,
+    retryRate: bucket.retryRate,
+    retry_rate: bucket.retryRate,
+    escalationRate: bucket.escalationRate,
+    escalation_rate: bucket.escalationRate,
+    reason,
+    evidence: {
+      bucketKey: bucket.key,
+      bucket_key: bucket.key,
+      successes: bucket.successes,
+      failures: bucket.failures,
+      verificationFailureCount: bucket.verificationFailureCount,
+      verification_failure_count: bucket.verificationFailureCount,
+      malformedOutputCount: bucket.malformedOutputCount,
+      malformed_output_count: bucket.malformedOutputCount,
+      providerFailureCount: bucket.providerFailureCount,
+      provider_failure_count: bucket.providerFailureCount,
+    },
+  };
+}
+
+function confidenceFor(bucket) {
+  if (bucket.sampleCount >= 20) return "high";
+  if (bucket.sampleCount >= 10) return "medium";
+  return "low";
+}
+
+function bestCheaperBucket(bucket, buckets) {
+  const fromIndex = TIER_ORDER.indexOf(bucket.modelTier);
+  if (fromIndex <= 0) return null;
+  const cheaperTiers = TIER_ORDER.slice(0, fromIndex).reverse();
+  return (
+    cheaperTiers
+      .map((tier) =>
+        buckets.find((candidate) => candidate.taskType === bucket.taskType && candidate.modelTier === tier)
+      )
+      .find(Boolean) ?? null
+  );
+}
+
+function nextTier(tier) {
+  const index = TIER_ORDER.indexOf(tier);
+  return index >= 0 && index < TIER_ORDER.length - 1 ? TIER_ORDER[index + 1] : null;
+}
+
 function uniqueStrings(values) {
   return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))].sort();
 }
@@ -281,4 +594,8 @@ function uniqueStringsInOrder(values) {
 
 function roundCost(value) {
   return Math.round((Number.isFinite(value) ? value : 0) * 1000000000) / 1000000000;
+}
+
+function roundRatio(value) {
+  return Math.round((Number.isFinite(value) ? value : 0) * 10000) / 10000;
 }

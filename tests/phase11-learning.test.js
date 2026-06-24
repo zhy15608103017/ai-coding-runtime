@@ -164,6 +164,142 @@ test("Phase 11 learning returns disabled profile when policy disables learning",
   assert.deepEqual(profile.recommendations, []);
 });
 
+test("Phase 11 learning aggregates task, tier, provider, retry, escalation, and failure metrics", () => {
+  const records = [
+    learningRecord({ runId: "pass_1", tier: "standard", modelCalls: [modelCall("T-001")] }),
+    learningRecord({
+      runId: "fail_1",
+      status: "verification_failed",
+      verificationStatus: "failed",
+      tier: "standard",
+      modelCalls: [
+        modelCall("T-001", {
+          status: "failed",
+          error: { code: "provider.http_error" },
+        }),
+      ],
+      workerAttempts: [workerAttempt("T-001", { status: "failed", applied: false })],
+    }),
+  ];
+
+  const profile = createLearningProfile(records, { policy: normalizePolicyConfig() });
+  const bucket = profile.buckets.find(
+    (item) =>
+      item.bucketType === "task_type_tier" &&
+      item.taskType === "implementation" &&
+      item.modelTier === "standard"
+  );
+  const providerBucket = profile.buckets.find(
+    (item) => item.bucketType === "task_type_provider_model" && item.selectedModel === "gpt-test"
+  );
+
+  assert.equal(bucket.sampleCount, 2);
+  assert.equal(bucket.successes, 1);
+  assert.equal(bucket.failures, 1);
+  assert.equal(bucket.successRate, 0.5);
+  assert.equal(bucket.failureRate, 0.5);
+  assert.equal(bucket.providerFailureCount, 1);
+  assert.equal(bucket.malformedOutputCount, 1);
+  assert.equal(bucket.verificationFailureCount, 1);
+  assert.equal(bucket.averageEstimatedCost, 0.0123);
+  assert.ok(providerBucket);
+});
+
+test("Phase 11 learning recommends cheaper tiers only with enough successful cheaper samples", () => {
+  const records = [
+    ...Array.from({ length: 5 }, (_, index) =>
+      learningRecord({
+        runId: `cheap_pass_${index}`,
+        tier: "cheap",
+        difficulty: "L1",
+        risk: "low",
+        verification: "easy",
+        model: "cheap-model",
+      })
+    ),
+    learningRecord({
+      runId: "standard_current",
+      tier: "standard",
+      difficulty: "L1",
+      risk: "low",
+      verification: "easy",
+      model: "standard-model",
+    }),
+  ];
+
+  const profile = createLearningProfile(records, {
+    policy: normalizePolicyConfig({ learning: { minSamples: 5 } }),
+  });
+  const recommendation = profile.recommendations.find(
+    (item) => item.action === "consider_cheaper_tier" && item.fromTier === "standard"
+  );
+
+  assert.ok(recommendation);
+  assert.equal(recommendation.toTier, "cheap");
+  assert.equal(recommendation.confidence, "low");
+  assert.equal(recommendation.sampleCount, 5);
+  assert.match(recommendation.reason, /cheap/i);
+});
+
+test("Phase 11 learning recommends stronger tiers when failures or escalations are frequent", () => {
+  const records = Array.from({ length: 5 }, (_, index) =>
+    learningRecord({
+      runId: `standard_fail_${index}`,
+      status: "verification_failed",
+      verificationStatus: "failed",
+      tier: "standard",
+      difficulty: "L2",
+      risk: "medium",
+      verification: "medium",
+    })
+  );
+
+  const profile = createLearningProfile(records, {
+    policy: normalizePolicyConfig({ learning: { minSamples: 5, strongerFailureThreshold: 0.3 } }),
+  });
+  const recommendation = profile.recommendations.find(
+    (item) => item.action === "consider_stronger_tier" && item.fromTier === "standard"
+  );
+
+  assert.ok(recommendation);
+  assert.equal(recommendation.toTier, "premium");
+  assert.equal(recommendation.sampleCount, 5);
+  assert.match(recommendation.reason, /failure|escalation/i);
+});
+
+test("Phase 11 learning holds recommendations for small samples and high-risk downgrades", () => {
+  const smallProfile = createLearningProfile(
+    [learningRecord({ runId: "tiny_1", tier: "cheap", difficulty: "L1", risk: "low" })],
+    { policy: normalizePolicyConfig({ learning: { minSamples: 5 } }) }
+  );
+  const highRiskProfile = createLearningProfile(
+    [
+      ...Array.from({ length: 5 }, (_, index) =>
+        learningRecord({
+          runId: `cheap_high_${index}`,
+          tier: "cheap",
+          difficulty: "L3",
+          risk: "high",
+        })
+      ),
+      learningRecord({
+        runId: "premium_high",
+        tier: "premium",
+        difficulty: "L3",
+        risk: "high",
+      }),
+    ],
+    { policy: normalizePolicyConfig({ learning: { minSamples: 5 } }) }
+  );
+
+  assert.ok(smallProfile.recommendations.some((item) => item.action === "hold"));
+  assert.ok(highRiskProfile.recommendations.some((item) => item.action === "hold" && /safety/i.test(item.reason)));
+  assert.equal(
+    highRiskProfile.recommendations.some((item) => item.action === "consider_cheaper_tier"),
+    false
+  );
+});
+
 function learningRecord({
   runId,
   status = "verification_passed",
