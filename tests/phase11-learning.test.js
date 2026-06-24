@@ -300,6 +300,69 @@ test("Phase 11 learning holds recommendations for small samples and high-risk do
   );
 });
 
+test("Phase 11 report exposes learning profile in JSON and Markdown", () => {
+  const current = learningRecord({ runId: "current", tier: "standard" });
+  const history = Array.from({ length: 5 }, (_, index) =>
+    learningRecord({
+      runId: `cheap_history_${index}`,
+      tier: "cheap",
+      difficulty: "L1",
+      risk: "low",
+      verification: "easy",
+      model: "cheap-model",
+    })
+  );
+
+  const report = createReport(current, {
+    historyRecords: history,
+    policy: normalizePolicyConfig({ learning: { minSamples: 5 } }),
+  });
+  const markdown = formatReportMarkdown(report);
+
+  assert.equal(report.learningProfile.enabled, true);
+  assert.equal(report.learning_profile.enabled, true);
+  assert.equal(report.learningProfile.mode, "shadow");
+  assert.ok(report.learningProfile.eligibleSamples >= 6);
+  assert.ok(report.exportFormat.sections.includes("learning_profile"));
+  assert.match(markdown, /## Learning/);
+  assert.match(markdown, /mode: shadow/);
+  assert.match(markdown, /eligible samples:/);
+});
+
+test("Phase 11 report shows disabled learning profile when policy disables learning", () => {
+  const report = createReport(learningRecord({ runId: "disabled_report" }), {
+    policy: normalizePolicyConfig({ learning: { enabled: false } }),
+  });
+  const markdown = formatReportMarkdown(report);
+
+  assert.equal(report.learningProfile.enabled, false);
+  assert.equal(report.learningProfile.mode, "off");
+  assert.match(markdown, /Learning disabled by policy/);
+});
+
+test("Phase 11 learning does not affect deterministic route creation", () => {
+  const baseline = createRuntimePlan({
+    request: "plan only: summarize the repository without modifying files",
+  });
+  const withLearningPolicy = createRuntimePlan({
+    request: "plan only: summarize the repository without modifying files",
+    policy: normalizePolicyConfig({
+      learning: {
+        enabled: true,
+        mode: "auto",
+        minSamples: 1,
+        cheapSuccessThreshold: 0.1,
+      },
+    }),
+  });
+
+  assert.deepEqual(
+    withLearningPolicy.tasks.map((task) => task.modelTier),
+    baseline.tasks.map((task) => task.modelTier)
+  );
+  assert.deepEqual(withLearningPolicy.routingTrace, baseline.routingTrace);
+});
+
 function learningRecord({
   runId,
   status = "verification_passed",

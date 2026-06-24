@@ -92,6 +92,9 @@ test("Phase 9 report exposes final report, cost report, trace data, and export f
     assert.ok(report.routingDecisions[0].reason);
     assert.equal(report.traceViewerData.run.runId, run.runId);
     assert.equal(report.exportFormat.schema, "ai-coding-runtime.report");
+    assert.ok(report.learningProfile);
+    assert.equal(report.learningProfile.mode, "shadow");
+    assert.ok(report.exportFormat.sections.includes("learning_profile"));
     assert.ok(report.finalReport.followUpRecommendations.length >= 1);
   } finally {
     await rm(workspace, { recursive: true, force: true });

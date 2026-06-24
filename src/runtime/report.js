@@ -1,4 +1,5 @@
 import { redactSecrets } from "./policy.js";
+import { createLearningProfile } from "./learning.js";
 
 export function createReport(record, { historyRecords = [], policy = record.plan?.policyConfig } = {}) {
   const tasks = record.plan.tasks;
@@ -26,6 +27,7 @@ export function createReport(record, { historyRecords = [], policy = record.plan
     failureAnalysis,
   });
   const modelReliability = createModelReliabilityMetrics([record, ...historyRecords]);
+  const learningProfile = safeCreateLearningProfile([record, ...historyRecords], { policy });
   const finalReport = {
     summary: `Planned ${tasks.length} task(s) for runtime execution.`,
     changedFiles,
@@ -89,6 +91,8 @@ export function createReport(record, { historyRecords = [], policy = record.plan
     },
     failureAnalysis,
     modelReliability,
+    learningProfile,
+    learning_profile: learningProfile,
     traceViewerData: createTraceViewerData(record),
     exportFormat: {
       schema: "ai-coding-runtime.report",
@@ -106,6 +110,7 @@ export function createReport(record, { historyRecords = [], policy = record.plan
         "follow_up_recommendations",
         "trace_viewer_data",
         "model_reliability",
+        "learning_profile",
         "failure_analysis",
       ],
     },
@@ -215,6 +220,9 @@ export function formatReportMarkdown(report) {
     ``,
     `## Model Reliability`,
     ...formatModelReliability(report.modelReliability),
+    ``,
+    `## Learning`,
+    ...formatLearningProfile(report.learningProfile),
     ``,
     `## Follow-Up Recommendations`,
     ...(report.finalReport?.followUpRecommendations?.length
@@ -596,6 +604,30 @@ function createModelReliabilityMetrics(records) {
   };
 }
 
+function safeCreateLearningProfile(records, options) {
+  try {
+    return createLearningProfile(records, options);
+  } catch (error) {
+    return {
+      enabled: true,
+      mode: "shadow",
+      error: {
+        code: "learning.profile.failed",
+        message: error.message,
+      },
+      recordsScanned: Array.isArray(records) ? records.length : 0,
+      records_scanned: Array.isArray(records) ? records.length : 0,
+      eligibleSamples: 0,
+      eligible_samples: 0,
+      ignoredRecords: 0,
+      ignored_records: 0,
+      samples: [],
+      buckets: [],
+      recommendations: [],
+    };
+  }
+}
+
 function getExplicitVerificationOutcome(record) {
   const excludedStatuses = new Set([
     "planned",
@@ -784,4 +816,35 @@ function formatModelReliability(modelReliability) {
     (sample) =>
       `- ${sample.taskType}/${sample.modelTier}: ${sample.successes}/${sample.attempts} success (${sample.successRate})`
   );
+}
+
+function formatLearningProfile(profile) {
+  if (!profile) {
+    return ["- no learning profile recorded"];
+  }
+  if (profile.enabled === false) {
+    return [`- ${profile.reason ?? "Learning disabled by policy."}`];
+  }
+  if (profile.error) {
+    return [`- error: ${profile.error.code}`, `- message: ${profile.error.message}`];
+  }
+
+  const lines = [
+    `- mode: ${profile.mode ?? "shadow"}`,
+    `- eligible samples: ${profile.eligibleSamples ?? 0} from ${profile.recordsScanned ?? 0} records`,
+  ];
+  for (const warning of profile.warnings ?? []) {
+    lines.push(`- warning: ${warning}`);
+  }
+  if ((profile.recommendations ?? []).length === 0) {
+    lines.push("- recommendations: none");
+  } else {
+    lines.push("- recommendations:");
+    for (const item of profile.recommendations.slice(0, 5)) {
+      lines.push(
+        `  - ${item.taskType}/${item.fromTier}: ${item.action} -> ${item.toTier} (${item.confidence}; ${item.reason})`
+      );
+    }
+  }
+  return lines;
 }
