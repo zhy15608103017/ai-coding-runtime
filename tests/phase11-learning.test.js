@@ -363,6 +363,23 @@ test("Phase 11 learning does not affect deterministic route creation", () => {
   assert.deepEqual(withLearningPolicy.routingTrace, baseline.routingTrace);
 });
 
+test("Phase 11 documentation and roadmap describe shadow learning without completing import", async () => {
+  const readme = await readFile("README.md", "utf8");
+  const integrations = await readFile("docs/integrations.md", "utf8");
+  const roadmap = await readFile("total.md", "utf8");
+  const phase11 = sectionBetween(roadmap, "## Phase 11:", "## Phase 12:");
+
+  assert.match(readme, /Phase 11\.0|learning profile|shadow recommendation/i);
+  assert.match(integrations, /learningProfile|learning_profile|shadow recommendation/i);
+  assert.match(phase11, /- \[x\] Record outcome quality by task type and model tier\./);
+  assert.match(phase11, /- \[x\] Record retry and escalation frequency\./);
+  assert.match(phase11, /- \[x\] Record verification failure patterns\./);
+  assert.match(phase11, /- \[x\] Recommend cheaper tiers for task types with high cheap-model success rates\./);
+  assert.match(phase11, /- \[x\] Recommend stronger tiers for task types with frequent cheap-model failures\./);
+  assert.match(phase11, /- \[x\] Add policy option to disable learning\./);
+  assert.match(phase11, /- \[ \] Add export\/import for routing history\./);
+});
+
 function learningRecord({
   runId,
   status = "verification_passed",
@@ -483,4 +500,13 @@ function modelCall(taskId, overrides = {}) {
     response: "raw model response must not enter learning",
     ...overrides,
   };
+}
+
+function sectionBetween(content, startMarker, endMarker) {
+  const start = content.indexOf(startMarker);
+  const end = content.indexOf(endMarker, start + startMarker.length);
+
+  assert.notEqual(start, -1, `${startMarker} not found`);
+  assert.notEqual(end, -1, `${endMarker} not found`);
+  return content.slice(start, end);
 }

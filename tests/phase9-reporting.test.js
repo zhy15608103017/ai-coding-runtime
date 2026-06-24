@@ -338,7 +338,7 @@ test("Phase 9 roadmap checklist is complete while Phase 11 remains open", async 
   for (const task of phase9.matchAll(/- \[(x| )\] /g)) {
     assert.equal(task[1], "x");
   }
-  assertSectionUnchecked(phase11, "Phase 11");
+  assertSectionIncomplete(phase11, "Phase 11");
 });
 
 function runCli(args, runtimeHome) {
@@ -361,13 +361,10 @@ function sectionBetween(content, startMarker, endMarker) {
   return content.slice(start, end);
 }
 
-function assertSectionUnchecked(section, label) {
+function assertSectionIncomplete(section, label) {
   const tasks = [...section.matchAll(/- \[(x| )\] /g)];
   assert.ok(tasks.length > 0, `${label} should contain checklist tasks`);
-
-  for (const task of tasks) {
-    assert.equal(task[1], " ", `${label} should not be marked complete yet`);
-  }
+  assert.ok(tasks.some((task) => task[1] === " "), `${label} should still have unchecked work`);
 }
 
 function reliabilityRecord(runId, status, verificationStatus) {

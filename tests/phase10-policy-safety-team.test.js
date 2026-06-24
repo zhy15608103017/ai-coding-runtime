@@ -261,7 +261,7 @@ test("Phase 10 roadmap checklist is complete without marking Phase 11 complete",
   assert.doesNotMatch(phase10, /- \[ \] /);
   assert.match(phase10, /- \[x\] Add policy schema\./);
   assert.match(phase10, /- \[x\] Add audit export for completed runs\./);
-  assertSectionUnchecked(phase11, "Phase 11");
+  assertSectionIncomplete(phase11, "Phase 11");
 });
 
 function sectionBetween(content, startMarker, endMarker) {
@@ -273,11 +273,8 @@ function sectionBetween(content, startMarker, endMarker) {
   return content.slice(start, end);
 }
 
-function assertSectionUnchecked(section, label) {
+function assertSectionIncomplete(section, label) {
   const tasks = [...section.matchAll(/- \[(x| )\] /g)];
   assert.ok(tasks.length > 0, `${label} should contain checklist tasks`);
-
-  for (const task of tasks) {
-    assert.equal(task[1], " ", `${label} should not be marked complete yet`);
-  }
+  assert.ok(tasks.some((task) => task[1] === " "), `${label} should still have unchecked work`);
 }

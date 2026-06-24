@@ -591,12 +591,12 @@ safety:
 
 **Tasks:**
 
-- [ ] Record outcome quality by task type and model tier.
-- [ ] Record retry and escalation frequency.
-- [ ] Record verification failure patterns.
-- [ ] Recommend cheaper tiers for task types with high cheap-model success rates.
-- [ ] Recommend stronger tiers for task types with frequent cheap-model failures.
-- [ ] Add policy option to disable learning.
+- [x] Record outcome quality by task type and model tier.
+- [x] Record retry and escalation frequency.
+- [x] Record verification failure patterns.
+- [x] Recommend cheaper tiers for task types with high cheap-model success rates.
+- [x] Recommend stronger tiers for task types with frequent cheap-model failures.
+- [x] Add policy option to disable learning.
 - [ ] Add export/import for routing history.
 
 **Acceptance Criteria:**

@@ -262,5 +262,6 @@ Phase 10 adds a top-level `policy` config for team safety controls: budget limit
 - failure categories for provider errors, malformed worker output, policy violations, verification failures, and rejected approvals
 - trace viewer data and export metadata
 - historical model reliability metrics grouped by task type and model tier
+- Phase 11.0 learning profile data with local-only shadow recommendations, sample counts, retry/escalation rates, verification failure patterns, and policy-disabled output
 
 `ai-coding-runtime audit <run-id> --json` returns the Phase 10 redacted audit export for completed runs.
