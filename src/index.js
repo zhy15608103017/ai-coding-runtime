@@ -14,6 +14,7 @@ export {
 } from "./runtime/router.js";
 export { FileExecutionStore } from "./runtime/store.js";
 export { createReport, formatReportMarkdown } from "./runtime/report.js";
+export { createLearningProfile } from "./runtime/learning.js";
 export { DEFAULT_RUNTIME_CONFIG, loadRuntimeConfig } from "./runtime/config.js";
 export { executeRun, skipReasonForTask } from "./runtime/execution.js";
 export { asMcpToolResult, callRuntimeTool, RUNTIME_TOOLS } from "./runtime/tools.js";

@@ -12,6 +12,15 @@ export const DEFAULT_POLICY_CONFIG = {
     securityTasksMinTier: "premium",
     readonlyTasksAllowLocalModels: true,
   },
+  learning: {
+    enabled: true,
+    mode: "shadow",
+    minSamples: 5,
+    cheapSuccessThreshold: 0.85,
+    strongerFailureThreshold: 0.3,
+    maxRetryRateForDowngrade: 0.15,
+    maxEscalationRateForDowngrade: 0.1,
+  },
   safety: {
     requireHumanApprovalForHighRisk: true,
     requireTestsForCodeChanges: false,
@@ -49,6 +58,7 @@ export function normalizePolicyConfig(policy = {}) {
   normalized.schemaVersion = DEFAULT_POLICY_CONFIG.schemaVersion;
   normalizeBudgetAliases(normalized.budget);
   normalizeRoutingAliases(normalized.routing);
+  normalizeLearningAliases(normalized.learning);
   normalizeSafetyAliases(normalized.safety);
   normalized.workspace.allowedFiles = uniqueStrings(normalized.workspace.allowedFiles);
   normalized.workspace.blockedFiles = uniqueStrings(normalized.workspace.blockedFiles);
@@ -75,6 +85,26 @@ export function validatePolicyConfig(policy = {}) {
   for (const field of BOOLEAN_SAFETY_FIELDS) {
     if (typeof normalized.safety[field] !== "boolean") {
       errors.push(error("policy.safety.boolean.invalid", `policy.safety.${field}`));
+    }
+  }
+
+  if (typeof normalized.learning.enabled !== "boolean") {
+    errors.push(error("policy.learning.enabled.invalid", "policy.learning.enabled"));
+  }
+  if (!["off", "shadow"].includes(normalized.learning.mode)) {
+    errors.push(error("policy.learning.mode.invalid", "policy.learning.mode"));
+  }
+  if (!Number.isInteger(normalized.learning.minSamples) || normalized.learning.minSamples < 1) {
+    errors.push(error("policy.learning.min_samples.invalid", "policy.learning.minSamples"));
+  }
+  for (const field of [
+    "cheapSuccessThreshold",
+    "strongerFailureThreshold",
+    "maxRetryRateForDowngrade",
+    "maxEscalationRateForDowngrade",
+  ]) {
+    if (!isRatio(normalized.learning[field])) {
+      errors.push(error("policy.learning.threshold.invalid", `policy.learning.${field}`));
     }
   }
 
@@ -383,6 +413,10 @@ function isNonNegativeNumber(value) {
   return Number.isFinite(value) && value >= 0;
 }
 
+function isRatio(value) {
+  return Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
 function isStringArray(value) {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
@@ -408,6 +442,43 @@ function normalizeRoutingAliases(routing) {
   routing.securityTasksMinTier = routing.securityTasksMinTier ?? routing.security_tasks_min_tier;
   routing.readonlyTasksAllowLocalModels =
     routing.readonlyTasksAllowLocalModels ?? routing.readonly_tasks_allow_local_models;
+}
+
+function normalizeLearningAliases(learning) {
+  if (!isPlainObject(learning)) return;
+  learning.enabled =
+    hasOwn(learning, "learning_enabled") ? learning.learning_enabled : learning.enabled;
+  learning.mode =
+    hasOwn(learning, "learning_mode") ? learning.learning_mode : learning.mode;
+  learning.minSamples =
+    hasOwn(learning, "min_samples") ? learning.min_samples : learning.minSamples;
+  learning.cheapSuccessThreshold =
+    hasOwn(learning, "cheap_success_threshold")
+      ? learning.cheap_success_threshold
+      : learning.cheapSuccessThreshold;
+  learning.strongerFailureThreshold =
+    hasOwn(learning, "stronger_failure_threshold")
+      ? learning.stronger_failure_threshold
+      : learning.strongerFailureThreshold;
+  learning.maxRetryRateForDowngrade =
+    hasOwn(learning, "max_retry_rate_for_downgrade")
+      ? learning.max_retry_rate_for_downgrade
+      : learning.maxRetryRateForDowngrade;
+  learning.maxEscalationRateForDowngrade =
+    hasOwn(learning, "max_escalation_rate_for_downgrade")
+      ? learning.max_escalation_rate_for_downgrade
+      : learning.maxEscalationRateForDowngrade;
+
+  if (learning.mode === "advisory" || learning.mode === "auto") {
+    const requestedMode = learning.mode;
+    learning.mode = "shadow";
+    learning.requestedMode = requestedMode;
+    learning.requested_mode = requestedMode;
+    learning.warnings = uniqueStrings([
+      ...(learning.warnings ?? []),
+      `policy.learning.mode.${requestedMode}.normalized_to_shadow`,
+    ]);
+  }
 }
 
 function normalizeSafetyAliases(safety) {
