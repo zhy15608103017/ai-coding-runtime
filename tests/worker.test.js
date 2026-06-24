@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -740,3 +740,106 @@ async function writeProjectFile(workspace, relativePath, content) {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, content, "utf8");
 }
+
+function newFilePatchFor(filePath, contentLines) {
+  const lines = contentLines.map((line) => `+${line}`);
+  return [
+    `diff --git a/${filePath} b/${filePath}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${filePath}`,
+    `@@ -0,0 +1,${contentLines.length} @@`,
+    ...lines,
+    "",
+  ].join("\n");
+}
+
+async function assertFileDoesNotExist(absolutePath) {
+  await assert.rejects(() => stat(absolutePath), { code: "ENOENT" });
+}
+
+test("runtime_submit_worker_result creates a new file when the patch adds a previously absent file", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-worker-newfile-"));
+  const project = path.join(workspace, "project");
+  const store = new FileExecutionStore({ workspace: path.join(workspace, "runtime-data") });
+
+  try {
+    await writeProjectFile(project, "src/app.js", "export const value = 1;\n");
+    const run = await createApprovedRun(store);
+    const task = run.plan.tasks.find((candidate) => candidate.task_id === "T-003");
+    const newFilePath = path.join(project, "src/new-module.js");
+
+    await assertFileDoesNotExist(newFilePath);
+
+    const result = await callRuntimeTool(
+      "runtime_submit_worker_result",
+      {
+        runId: run.runId,
+        taskId: task.task_id,
+        apply: true,
+        result: workerResultForTask(task, {
+          patch: newFilePatchFor("src/new-module.js", ["// new module", "export const newVar = 42;"]),
+          filesTouched: ["src/new-module.js"],
+        }),
+      },
+      { store, runtimeOptions: { workspace: { cwd: project } } }
+    );
+
+    assert.equal(result.status, "applied");
+    assert.equal(result.applied, true);
+    assert.equal(
+      await readFile(newFilePath, "utf8"),
+      "// new module\nexport const newVar = 42;"
+    );
+    const record = await store.readRecord(run.runId);
+    assert.equal(record.workerAttempts.length, 1);
+    assert.equal(record.workerAttempts[0].status, "applied");
+    assert.equal(record.workerAttempts[0].applied, true);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("runtime_submit_worker_result rolls back a newly created file when a later patch hunk fails", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-worker-newfile-rollback-"));
+  const project = path.join(workspace, "project");
+  const store = new FileExecutionStore({ workspace: path.join(workspace, "runtime-data") });
+
+  try {
+    await writeProjectFile(project, "src/app.js", "export const value = 1;\n");
+    const run = await createApprovedRun(store);
+    const task = run.plan.tasks.find((candidate) => candidate.task_id === "T-003");
+    const newFilePath = path.join(project, "src/brand-new.js");
+
+    const patch = [
+      newFilePatchFor("src/brand-new.js", ["// created then rolled back"]),
+      patchFor("src/app.js", "export const missing = 1;", "export const value = 2;"),
+    ].join("");
+
+    await assert.rejects(
+      callRuntimeTool(
+        "runtime_submit_worker_result",
+        {
+          runId: run.runId,
+          taskId: task.task_id,
+          apply: true,
+          result: workerResultForTask(task, {
+            patch,
+            filesTouched: ["src/brand-new.js", "src/app.js"],
+          }),
+        },
+        { store, runtimeOptions: { workspace: { cwd: project } } }
+      ),
+      /worker.patch.apply_failed/
+    );
+
+    await assertFileDoesNotExist(newFilePath);
+    assert.equal(await readFile(path.join(project, "src/app.js"), "utf8"), "export const value = 1;\n");
+    const record = await store.readRecord(run.runId);
+    assert.equal(record.workerAttempts.length, 1);
+    assert.equal(record.workerAttempts[0].status, "failed");
+    assert.equal(record.workerAttempts[0].applied, false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

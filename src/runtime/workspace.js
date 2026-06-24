@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { evaluateFilePolicy } from "./policy.js";
@@ -265,11 +265,19 @@ export async function applyWorkerPatch({ cwd = process.cwd(), patch, task = {}, 
 
     let update = updatesByPath.get(filePath);
     if (!update) {
-      const content = await readFile(absolutePath, "utf8");
+      let original = "";
+      let existed = true;
+      try {
+        original = await readFile(absolutePath, "utf8");
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+        existed = false;
+      }
       update = {
         absolutePath,
-        original: content,
-        updated: content,
+        original,
+        existed,
+        updated: original,
       };
       updatesByPath.set(filePath, update);
     }
@@ -287,7 +295,11 @@ export async function applyWorkerPatch({ cwd = process.cwd(), patch, task = {}, 
   } catch (error) {
     for (const update of written.reverse()) {
       try {
-        await writeFile(update.absolutePath, update.original, "utf8");
+        if (update.existed) {
+          await writeFile(update.absolutePath, update.original, "utf8");
+        } else {
+          await unlink(update.absolutePath);
+        }
       } catch {
         // Preserve the original write failure while making a best effort rollback.
       }
