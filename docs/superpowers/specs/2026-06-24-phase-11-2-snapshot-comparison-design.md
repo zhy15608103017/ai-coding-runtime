@@ -1,90 +1,90 @@
-# Phase 11.2 Snapshot Comparison Design
+# Phase 11.2 Snapshot Comparison 设计
 
-**Objective:** Add a report-only comparison mode for two routing history snapshots so users can understand how imported or accumulated history changes learning signals, recommendation confidence, cost patterns, and routing risk before any future advisory routing work.
+**目标：** 增加一个只用于报告和分析的 snapshot comparison 能力，用来比较两个 routing history snapshot，让用户理解导入或积累历史之后，学习信号、推荐置信度、成本模式和路由风险发生了什么变化，并为未来 advisory routing 做准备。
 
-## Context
+## 背景
 
-Phase 11.0 added local shadow learning profiles and recommendations derived from run history. Phase 11.1 added privacy-safe routing history export/import through schema-versioned snapshots. Users can now move learning evidence between runtime stores, but they still need a way to answer a practical question:
+Phase 11.0 已经增加了本地 shadow learning profile 和 shadow recommendation。Phase 11.1 又增加了隐私安全的 routing history export/import，并使用带 schema version 的 snapshot 文件承载历史学习证据。现在用户已经可以移动学习历史，但还缺一个关键能力：
 
 ```text
-What changed after this history was added?
+导入这些历史之后，到底发生了什么变化？
 ```
 
-Without comparison, a user can inspect only the final `learningProfile`. They cannot easily tell which task buckets gained evidence, which recommendations changed, whether cheap-tier confidence improved, whether failures increased, or whether imported history added noise.
+如果没有 comparison，用户只能看到最终的 `learningProfile`。他们很难判断哪些 task bucket 增加了证据、哪些 recommendation 发生了变化、cheap tier 的置信度是否变高、失败率是否上升，或者导入历史是否带来了噪声。
 
-Phase 11.2 should remain observational. It explains historical signal changes; it does not influence routing, execution, verification, retries, provider selection, or policy.
+Phase 11.2 必须保持观察型能力。它解释历史信号变化，但不影响 routing、execution、verification、retry、provider selection 或 policy。
 
-## Recommended Approach
+## 推荐方案
 
-Implement **Learning Profile Comparison**.
+实现 **Learning Profile Comparison**。
 
-The runtime should read two Phase 11.1 routing history snapshots, derive a learning profile from each snapshot, then compare the resulting profiles. This produces a domain-specific comparison instead of a generic JSON diff.
+Runtime 读取两个 Phase 11.1 routing history snapshot，分别基于 snapshot records 生成 `learningProfile`，然后比较两个 profile。这样输出的是面向学习和路由决策的领域差异，而不是普通 JSON diff。
 
-This approach is recommended because:
+推荐这个方案的原因：
 
-- it reuses the existing learning model instead of inventing a second metric system
-- it compares routing-relevant concepts such as buckets and recommendations
-- it is resilient to harmless snapshot field ordering or metadata differences
-- it keeps privacy boundaries intact because snapshots are already sanitized
-- it creates evidence needed before any future advisory routing mode
+- 复用现有 learning model，不引入第二套指标系统。
+- 比较 routing 相关概念，例如 buckets 和 recommendations。
+- 不受 snapshot 字段顺序或无关 metadata 变化影响。
+- 保持 Phase 11.1 的隐私边界，因为 snapshot 已经经过 sanitization。
+- 为未来 advisory routing 提供可解释证据。
 
-## Alternatives Considered
+## 备选方案
 
-### Generic Snapshot JSON Diff
+### 普通 Snapshot JSON Diff
 
-Compare the two JSON files field by field.
+逐字段比较两个 JSON 文件。
 
-This is easy to implement, but low value. Users would see structural changes instead of learning meaning. A generic diff can say that records changed, but not whether confidence improved, failure risk increased, or a recommendation flipped.
+这个方案实现简单，但价值低。用户看到的是结构变化，而不是学习意义。普通 diff 可以告诉用户 records 变了，却不能说明 confidence 是否提高、失败风险是否增加、recommendation 是否反转。
 
-### Report File Diff
+### Report 文件 Diff
 
-Generate full runtime reports before and after import, then compare reports.
+先生成导入前后的完整 runtime report，再比较 report。
 
-This gives more context, but it mixes current-run details with historical learning changes. Snapshot comparison should be independent of a particular run.
+这个方案上下文更多，但会把当前 run 的细节和历史学习变化混在一起。Snapshot comparison 应该独立于某一次具体运行。
 
-### Import Then Compare Store State
+### Import 后比较 Store 状态
 
-Compare current store learning before and after importing a snapshot.
+把 snapshot 导入本地 store，然后比较导入前后的 learning 状态。
 
-This is closer to real workflow, but it has side effects and makes comparison harder to trust. Phase 11.2 should be pure: two input files in, comparison out, no store writes.
+这个方案更接近真实工作流，但有副作用，也更难信任。Phase 11.2 应该是纯分析：输入两个文件，输出 comparison，不写 store。
 
-## Scope
+## 范围
 
-Phase 11.2 includes:
+Phase 11.2 包含：
 
-- a runtime comparison module for two routing history snapshots
-- validation that both inputs use `ai-coding-runtime.routing-history.v1`
-- learning profile generation for each snapshot
-- bucket-level metric deltas
-- recommendation added/removed/changed detection
-- risk and confidence summaries
-- CLI command for JSON and Markdown output
-- tests for comparison behavior, privacy, malformed input, and no runtime side effects
+- 增加一个比较两个 routing history snapshot 的 runtime comparison module。
+- 校验两个输入都使用 `ai-coding-runtime.routing-history.v1`。
+- 分别基于两个 snapshot 生成 learning profile。
+- 输出 bucket 级别的指标 delta。
+- 检测 recommendation added / removed / changed。
+- 输出 risk 和 confidence summary。
+- 增加 JSON 和 Markdown 输出的 CLI 命令。
+- 增加 comparison 行为、隐私、异常输入和无 runtime side effect 的测试。
 
-Phase 11.2 does not include:
+Phase 11.2 不包含：
 
-- importing snapshots into the local store
-- modifying existing imported history
-- changing routing decisions
-- advisory routing
-- automatic routing
-- HTTP or MCP comparison endpoints
-- UI charts
-- generic JSON diff mode
-- raw prompt/source/patch/stdout/stderr comparison
+- 导入 snapshot 到本地 store。
+- 修改已有 imported history。
+- 改变 routing decision。
+- advisory routing。
+- automatic routing。
+- HTTP 或 MCP comparison endpoint。
+- UI chart。
+- 普通 JSON diff 模式。
+- raw prompt、source、patch、stdout、stderr 的比较。
 
-## CLI Surface
+## CLI 形态
 
-Add a `history compare` subcommand:
+增加 `history compare` 子命令：
 
 ```bash
 ai-coding-runtime history compare before.json after.json --json
 ai-coding-runtime history compare before.json after.json --markdown
 ```
 
-Default human output should be Markdown because comparison is explanatory. `--json` should output a stable machine-readable object.
+默认人类可读输出应该是 Markdown，因为 comparison 是解释型输出。`--json` 输出稳定的机器可读对象。
 
-Invalid usage should list supported forms:
+无效用法应该列出支持形式：
 
 ```text
 history compare requires two snapshot file paths.
@@ -92,9 +92,9 @@ Usage:
   ai-coding-runtime history compare <before.json> <after.json> [--json|--markdown]
 ```
 
-## Comparison Input
+## Comparison 输入
 
-Both inputs must be Phase 11.1 snapshots:
+两个输入都必须是 Phase 11.1 snapshot：
 
 ```json
 {
@@ -103,19 +103,19 @@ Both inputs must be Phase 11.1 snapshots:
 }
 ```
 
-The compare command should not require snapshots to have been imported. It should not read or write `FileExecutionStore`.
+`history compare` 不要求 snapshot 已经被 import。它不应该读取或写入 `FileExecutionStore`。
 
-If either snapshot is malformed:
+如果任意 snapshot 格式错误：
 
-- return a clear error
-- do not produce partial comparison output
-- do not write to the store
+- 返回清晰错误。
+- 不输出部分 comparison。
+- 不写入 store。
 
-Unknown future schema versions should be rejected in V1 rather than silently compared.
+V1 应该拒绝未知未来 schema version，而不是静默比较。
 
-## Comparison Output
+## Comparison 输出
 
-JSON output:
+JSON 输出：
 
 ```json
 {
@@ -146,7 +146,7 @@ JSON output:
 }
 ```
 
-Markdown output:
+Markdown 输出：
 
 ```text
 # Routing History Snapshot Comparison
@@ -167,15 +167,15 @@ Markdown output:
 - none
 ```
 
-## Bucket Diff Model
+## Bucket Diff 模型
 
-Compare learning buckets by stable identity:
+使用稳定 identity 比较 learning buckets：
 
 ```text
 bucket.type + canonical(bucket.key)
 ```
 
-For each matched bucket, calculate deltas for:
+对每个匹配 bucket 计算 delta：
 
 - `sampleCount`
 - `successRate`
@@ -187,64 +187,64 @@ For each matched bucket, calculate deltas for:
 - `providerFailureRate`
 - `averageEstimatedCost`
 
-For added buckets:
+对于新增 bucket：
 
-- mark `changeType: "added"`
-- include after metrics
+- 标记 `changeType: "added"`。
+- 包含 after metrics。
 
-For removed buckets:
+对于移除 bucket：
 
-- mark `changeType: "removed"`
-- include before metrics
+- 标记 `changeType: "removed"`。
+- 包含 before metrics。
 
-For changed buckets:
+对于变化 bucket：
 
-- mark `changeType: "changed"`
-- include before, after, and delta values
+- 标记 `changeType: "changed"`。
+- 包含 before、after 和 delta values。
 
-For unchanged buckets:
+对于未变化 bucket：
 
-- omit them from default output
-- include them only if a future `--all` option is covered by a separate design
+- 默认输出中省略。
+- 只有未来单独设计 `--all` 选项时才包含。
 
-V1 should not add `--all`.
+V1 不增加 `--all`。
 
-## Recommendation Diff Model
+## Recommendation Diff 模型
 
-Compare recommendations by stable identity:
+使用稳定 identity 比较 recommendations：
 
 ```text
 bucket.type + canonical(bucket.key)
 ```
 
-Track:
+跟踪：
 
-- added recommendations
-- removed recommendations
-- action changes, such as `hold` to `consider_cheaper_tier`
-- confidence changes
-- reason changes
-- sample count changes
+- 新增 recommendation。
+- 移除 recommendation。
+- action 变化，例如 `hold` 变成 `consider_cheaper_tier`。
+- confidence 变化。
+- reason 变化。
+- sample count 变化。
 
-Recommendation changes are more user-facing than raw bucket changes and should appear first in Markdown.
+Recommendation changes 比 raw bucket changes 更面向用户，Markdown 输出中应该先展示。
 
 ## Risk Flags
 
-Generate warning-style flags when comparison reveals potentially unsafe or noisy history changes:
+当 comparison 发现潜在不安全或噪声历史变化时，生成 warning 风格的 flags：
 
-- `sample_size_low`: after snapshot still has too few samples for a changed recommendation
-- `failure_rate_increased`: failure rate increased by at least 0.15 for a comparable bucket
-- `retry_rate_increased`: retry rate increased by at least 0.15
-- `escalation_rate_increased`: escalation rate increased by at least 0.10
-- `recommendation_regressed`: recommendation moved from cheaper/hold to stronger tier
-- `cost_increased`: average estimated cost increased by at least 25% where both sides have cost data
-- `signals_mixed`: success rate improved but retry or escalation rate also increased materially
+- `sample_size_low`：after snapshot 对某个 changed recommendation 仍然样本不足。
+- `failure_rate_increased`：可比较 bucket 的 failure rate 至少上升 0.15。
+- `retry_rate_increased`：retry rate 至少上升 0.15。
+- `escalation_rate_increased`：escalation rate 至少上升 0.10。
+- `recommendation_regressed`：recommendation 从 cheaper 或 hold 退化到 stronger tier。
+- `cost_increased`：两侧都有 cost data 时，average estimated cost 至少上升 25%。
+- `signals_mixed`：success rate 改善，但 retry 或 escalation rate 也明显上升。
 
-Risk flags should be explanatory only. They must not affect runtime behavior.
+Risk flags 只用于解释，不影响 runtime 行为。
 
-## Privacy And Safety
+## 隐私与安全
 
-Snapshot comparison must not include:
+Snapshot comparison 不能包含：
 
 - raw request text
 - prompt text
@@ -255,49 +255,49 @@ Snapshot comparison must not include:
 - environment variables
 - provider credentials
 
-Because Phase 11.1 snapshots are already sanitized, Phase 11.2 should operate only on sanitized snapshot records. It should not accept raw run records as compare input.
+因为 Phase 11.1 snapshot 已经被 sanitization，Phase 11.2 只应该处理 sanitized snapshot records。它不接受 raw run records 作为 compare 输入。
 
-The comparison module must be pure:
+Comparison module 必须是纯函数式分析：
 
-- no store reads
-- no store writes
-- no import side effects
-- no routing side effects
-- no execution side effects
+- 不读 store。
+- 不写 store。
+- 不产生 import side effect。
+- 不产生 routing side effect。
+- 不产生 execution side effect。
 
-## Module Design
+## 模块设计
 
-Create or extend a focused runtime module:
+新增一个聚焦的 runtime module：
 
 ```text
 src/runtime/history-comparison.js
 ```
 
-Responsibilities:
+职责：
 
-- validate two snapshot objects
-- derive learning profiles from snapshot records
-- normalize bucket and recommendation identities
-- compute summary deltas
-- compute bucket changes
-- compute recommendation changes
-- compute risk flags
-- format Markdown comparison output
+- 校验两个 snapshot object。
+- 基于 snapshot records 生成 learning profiles。
+- 规范化 bucket 和 recommendation identity。
+- 计算 summary deltas。
+- 计算 bucket changes。
+- 计算 recommendation changes。
+- 计算 risk flags。
+- 格式化 Markdown comparison output。
 
-Keep export/import concerns in `src/runtime/history.js`. Keep report generation in `src/runtime/report.js`. Comparison deserves a separate module because it has different responsibilities and should stay pure.
+`src/runtime/history.js` 继续负责 export/import。`src/runtime/report.js` 继续负责 report generation。Comparison 有独立职责，应该保持单独模块，并且保持纯分析。
 
-Expected public functions:
+预期公开函数：
 
 ```javascript
 export function compareRoutingHistorySnapshots(beforeSnapshot, afterSnapshot, options = {}) {}
 export function formatSnapshotComparisonMarkdown(comparison) {}
 ```
 
-Export these functions from `src/index.js` for tests and future integrations.
+这些函数需要从 `src/index.js` 导出，供测试和未来 integrations 使用。
 
-## CLI Integration
+## CLI 集成
 
-Extend existing `historyCommand` in `src/cli.js`:
+扩展 `src/cli.js` 里的 `historyCommand`：
 
 ```text
 history export
@@ -305,60 +305,60 @@ history import
 history compare
 ```
 
-`history compare` should:
+`history compare` 应该：
 
-1. read two JSON files
-2. parse both snapshots
-3. call `compareRoutingHistorySnapshots`
-4. print JSON when `--json` is provided
-5. print Markdown otherwise or when `--markdown` is provided
+1. 读取两个 JSON 文件。
+2. 解析两个 snapshot。
+3. 调用 `compareRoutingHistorySnapshots`。
+4. 当传入 `--json` 时输出 JSON。
+5. 默认输出 Markdown，或当传入 `--markdown` 时输出 Markdown。
 
-The command should not create a `FileExecutionStore`.
+该命令不应该创建 `FileExecutionStore`。
 
-## Error Handling
+## 错误处理
 
-Comparison should fail with actionable messages:
+Comparison 应该给出可操作错误：
 
-- missing before path: `history compare requires two snapshot file paths.`
-- missing after path: `history compare requires two snapshot file paths.`
-- invalid JSON: include file path and parse failure
-- unsupported schema: include actual schema value
-- malformed records: reject the snapshot rather than silently comparing partial data
+- 缺少 before path：`history compare requires two snapshot file paths.`
+- 缺少 after path：`history compare requires two snapshot file paths.`
+- JSON 无效：包含文件路径和 parse failure。
+- schema 不支持：包含实际 schema value。
+- records 格式错误：拒绝整个 snapshot，而不是静默比较部分数据。
 
-Unlike export, comparison should not skip malformed records. It is an analysis tool, and silently comparing partial data can mislead users.
+和 export 不同，comparison 不应该跳过 malformed records。它是分析工具，静默比较部分数据会误导用户。
 
-## Testing Strategy
+## 测试策略
 
-Add tests for:
+增加测试覆盖：
 
-- comparing two valid snapshots produces summary deltas
-- added bucket appears in `bucketChanges`
-- changed success/retry/escalation rates are calculated
-- added recommendation appears in `recommendationChanges`
-- confidence change appears in `recommendationChanges`
-- risk flags appear for increased failure/retry/escalation/cost
-- Markdown output includes summary, recommendation changes, bucket changes, and risk flags
-- CLI `history compare before after --json` works
-- CLI `history compare before after --markdown` works
-- malformed or unsupported snapshots fail clearly
-- compare command does not write imported history or local runs
-- comparison output does not contain raw prompt/source/patch/stdout/stderr content
+- 比较两个 valid snapshots 会输出 summary deltas。
+- added bucket 会出现在 `bucketChanges`。
+- success、retry、escalation rate 的变化能被计算。
+- added recommendation 会出现在 `recommendationChanges`。
+- confidence change 会出现在 `recommendationChanges`。
+- failure、retry、escalation、cost 上升时会产生 risk flags。
+- Markdown 输出包含 summary、recommendation changes、bucket changes 和 risk flags。
+- CLI `history compare before after --json` 可用。
+- CLI `history compare before after --markdown` 可用。
+- malformed 或 unsupported snapshots 会清晰失败。
+- compare command 不写 imported history，也不写 local runs。
+- comparison output 不包含 raw prompt、source、patch、stdout、stderr 内容。
 
-## Acceptance Criteria
+## 验收标准
 
-- Users can compare two routing history snapshot files without importing either one.
-- The comparison explains learning-significant differences, not generic JSON changes.
-- Recommendation changes are visible and easy to inspect.
-- Bucket metric deltas are visible for changed/added/removed buckets.
-- Risk flags highlight noisy or regressive history changes.
-- Comparison has no store, routing, execution, provider, or verification side effects.
-- Output is available in both JSON and Markdown.
-- The comparison preserves Phase 11 privacy boundaries.
+- 用户可以比较两个 routing history snapshot 文件，并且不需要导入任意一个。
+- comparison 解释 learning-significant differences，而不是普通 JSON changes。
+- recommendation changes 清晰可见。
+- changed、added、removed buckets 的 metric deltas 清晰可见。
+- risk flags 能突出噪声历史或回归信号。
+- comparison 没有 store、routing、execution、provider 或 verification side effects。
+- 输出同时支持 JSON 和 Markdown。
+- comparison 保持 Phase 11 隐私边界。
 
-## Follow-Up Path
+## 后续路径
 
-After Phase 11.2:
+Phase 11.2 之后：
 
-- Phase 11.3 can add `history compare --against-store` if there is demand.
-- Phase 11.4 can add advisory routing design using comparison evidence as a prerequisite.
-- Phase 12 UI can visualize comparison output without needing to know snapshot internals.
+- Phase 11.3 可以在有需求时增加 `history compare --against-store`。
+- Phase 11.4 可以基于 comparison evidence 设计 advisory routing。
+- Phase 12 UI 可以直接可视化 comparison output，而不需要理解 snapshot 内部结构。
