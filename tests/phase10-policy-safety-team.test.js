@@ -253,15 +253,15 @@ test("Phase 10 policy documentation covers safety surfaces", async () => {
   assert.match(integrations, /runtime_audit|audit export/i);
 });
 
-test("Phase 10 roadmap checklist is complete without marking Phase 11 complete", async () => {
+test("Phase 10 roadmap checklist is complete while Phase 12 remains open", async () => {
   const roadmap = await readFile("total.md", "utf8");
   const phase10 = sectionBetween(roadmap, "## Phase 10:", "## Phase 11:");
-  const phase11 = sectionBetween(roadmap, "## Phase 11:", "## Phase 12:");
+  const phase12 = sectionBetween(roadmap, "## Phase 12:", "## Alpha Scope");
 
   assert.doesNotMatch(phase10, /- \[ \] /);
   assert.match(phase10, /- \[x\] Add policy schema\./);
   assert.match(phase10, /- \[x\] Add audit export for completed runs\./);
-  assertSectionIncomplete(phase11, "Phase 11");
+  assertSectionIncomplete(phase12, "Phase 12");
 });
 
 function sectionBetween(content, startMarker, endMarker) {

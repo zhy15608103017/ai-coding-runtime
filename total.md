@@ -597,7 +597,7 @@ safety:
 - [x] Recommend cheaper tiers for task types with high cheap-model success rates.
 - [x] Recommend stronger tiers for task types with frequent cheap-model failures.
 - [x] Add policy option to disable learning.
-- [ ] Add export/import for routing history.
+- [x] Add export/import for routing history.
 
 **Acceptance Criteria:**
 

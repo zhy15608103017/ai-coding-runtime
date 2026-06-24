@@ -491,7 +491,7 @@ test("Phase 11 learning does not affect deterministic route creation", () => {
   assert.deepEqual(withLearningPolicy.routingTrace, baseline.routingTrace);
 });
 
-test("Phase 11 documentation and roadmap describe shadow learning without completing import", async () => {
+test("Phase 11 documentation and roadmap describe completed shadow learning import support", async () => {
   const readme = await readFile("README.md", "utf8");
   const integrations = await readFile("docs/integrations.md", "utf8");
   const roadmap = await readFile("total.md", "utf8");
@@ -505,7 +505,7 @@ test("Phase 11 documentation and roadmap describe shadow learning without comple
   assert.match(phase11, /- \[x\] Recommend cheaper tiers for task types with high cheap-model success rates\./);
   assert.match(phase11, /- \[x\] Recommend stronger tiers for task types with frequent cheap-model failures\./);
   assert.match(phase11, /- \[x\] Add policy option to disable learning\./);
-  assert.match(phase11, /- \[ \] Add export\/import for routing history\./);
+  assert.match(phase11, /- \[x\] Add export\/import for routing history\./);
 });
 
 function learningRecord({

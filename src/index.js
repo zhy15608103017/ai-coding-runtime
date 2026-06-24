@@ -15,6 +15,12 @@ export {
 export { FileExecutionStore } from "./runtime/store.js";
 export { createReport, formatReportMarkdown } from "./runtime/report.js";
 export { createLearningProfile } from "./runtime/learning.js";
+export {
+  ROUTING_HISTORY_SCHEMA_VERSION,
+  createRoutingHistorySnapshot,
+  importRoutingHistorySnapshot,
+  sanitizeRoutingHistoryRecord,
+} from "./runtime/history.js";
 export { DEFAULT_RUNTIME_CONFIG, loadRuntimeConfig } from "./runtime/config.js";
 export { executeRun, skipReasonForTask } from "./runtime/execution.js";
 export { asMcpToolResult, callRuntimeTool, RUNTIME_TOOLS } from "./runtime/tools.js";
@@ -73,3 +79,4 @@ export {
   runSupervisorReview,
   shouldRunSupervisorReview,
 } from "./runtime/supervisor.js";
+export { runCli } from "./cli.js";

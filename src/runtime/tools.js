@@ -515,7 +515,15 @@ async function reportRun(runId, args, store, runtimeOptions = {}) {
   const record = await store.readRecord(runId);
   const historyRecords =
     typeof store.listRecords === "function" ? await store.listRecords() : [];
-  const report = createReport(record, { historyRecords, policy: runtimeOptions.policy });
+  const importedHistoryRecords =
+    typeof store.listImportedLearningRecords === "function"
+      ? await store.listImportedLearningRecords()
+      : [];
+  const report = createReport(record, {
+    historyRecords,
+    importedHistoryRecords,
+    policy: runtimeOptions.policy,
+  });
 
   if (args?.format === "markdown") {
     return {
@@ -532,7 +540,15 @@ async function auditRun(runId, store, runtimeOptions = {}) {
   const record = await store.readRecord(runId);
   const historyRecords =
     typeof store.listRecords === "function" ? await store.listRecords() : [];
-  const report = createReport(record, { historyRecords, policy: runtimeOptions.policy });
+  const importedHistoryRecords =
+    typeof store.listImportedLearningRecords === "function"
+      ? await store.listImportedLearningRecords()
+      : [];
+  const report = createReport(record, {
+    historyRecords,
+    importedHistoryRecords,
+    policy: runtimeOptions.policy,
+  });
   return createAuditExport(record, { report, policy: runtimeOptions.policy });
 }
 

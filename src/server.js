@@ -131,7 +131,15 @@ export function createRuntimeHttpServer({
         const record = await store.readRecord(reportMatch[1]);
         const historyRecords =
           typeof store.listRecords === "function" ? await store.listRecords() : [];
-        const report = createReport(record, { historyRecords, policy: runtimeOptions.policy });
+        const importedHistoryRecords =
+          typeof store.listImportedLearningRecords === "function"
+            ? await store.listImportedLearningRecords()
+            : [];
+        const report = createReport(record, {
+          historyRecords,
+          importedHistoryRecords,
+          policy: runtimeOptions.policy,
+        });
 
         if (url.searchParams.get("format") === "markdown") {
           return sendText(response, 200, formatReportMarkdown(report), "text/markdown; charset=utf-8");

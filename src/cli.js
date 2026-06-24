@@ -6,8 +6,9 @@ import {
   formatReportMarkdown,
   loadRuntimeConfig,
 } from "./index.js";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { startMcpStdioServer } from "./mcp.js";
+import { createRoutingHistorySnapshot, importRoutingHistorySnapshot } from "./runtime/history.js";
 import { createRuntimeHttpServer, listen, summarizeRecord } from "./server.js";
 
 export async function runCli(argv, io = process) {
@@ -27,6 +28,8 @@ export async function runCli(argv, io = process) {
         return await reportCommand(rest, io);
       case "audit":
         return await auditCommand(rest, io);
+      case "history":
+        return await historyCommand(rest, io);
       case "approve":
         return await approveCommand(rest, io);
       case "worker-result":
@@ -172,7 +175,15 @@ async function reportCommand(args, io) {
   const store = new FileExecutionStore({ workspace: config.storage.directory });
   const record = await store.readRecord(runId);
   const historyRecords = await store.listRecords();
-  const report = createReport(record, { historyRecords, policy: config.policy });
+  const importedHistoryRecords =
+    typeof store.listImportedLearningRecords === "function"
+      ? await store.listImportedLearningRecords()
+      : [];
+  const report = createReport(record, {
+    historyRecords,
+    importedHistoryRecords,
+    policy: config.policy,
+  });
 
   if (options.json && !options.markdown) {
     io.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -199,6 +210,91 @@ async function auditCommand(args, io) {
     { store, runtimeOptions: runtimeOptionsFromConfig(config) }
   );
   io.stdout.write(`${JSON.stringify(audit, null, 2)}\n`);
+  return 0;
+}
+
+async function historyCommand(args, io) {
+  const [subcommand, ...rest] = args;
+
+  if (subcommand === "export") {
+    return historyExportCommand(rest, io);
+  }
+
+  if (subcommand === "import") {
+    return historyImportCommand(rest, io);
+  }
+
+  throw new Error(
+    "history requires export or import.\n" +
+      "Usage:\n" +
+      "  ai-coding-runtime history export <file> [--json]\n" +
+      "  ai-coding-runtime history import <file> [--json]"
+  );
+}
+
+async function historyExportCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const [filePath] = positional;
+
+  if (!filePath) {
+    throw new Error("history export requires a file path.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const snapshot = createRoutingHistorySnapshot(await store.listRecords());
+  await writeFile(filePath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+
+  const output = {
+    status: "ok",
+    exported: snapshot.summary.recordsExported,
+    skipped: snapshot.summary.recordsSkipped,
+    path: filePath,
+  };
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+  } else {
+    io.stdout.write(
+      `Exported ${output.exported} routing history record(s) to ${filePath}; skipped ${output.skipped}.\n`
+    );
+  }
+
+  return 0;
+}
+
+async function historyImportCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const [filePath] = positional;
+
+  if (!filePath) {
+    throw new Error("history import requires a file path.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const snapshot = JSON.parse(await readFile(filePath, "utf8"));
+  const existingImportIds = new Set(
+    (await store.listImportedLearningRecords()).map((record) => record.importId).filter(Boolean)
+  );
+  const prepared = importRoutingHistorySnapshot(snapshot, { existingImportIds });
+  const written = await store.writeImportedLearningRecords(prepared.importedRecords);
+  const output = {
+    status: "ok",
+    imported: written.imported,
+    duplicates: prepared.duplicates + written.duplicates,
+    rejected: prepared.rejected,
+    path: filePath,
+  };
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+  } else {
+    io.stdout.write(
+      `Imported ${output.imported} routing history record(s); skipped ${output.duplicates} duplicate; rejected ${output.rejected}.\n`
+    );
+  }
+
   return 0;
 }
 
@@ -462,6 +558,8 @@ Usage:
   ai-coding-runtime worker-result <run-id> <task-id> --from-file result.json [--apply] [--json]
   ai-coding-runtime report <run-id> [--json|--markdown]
   ai-coding-runtime audit <run-id> --json
+  ai-coding-runtime history export <file> [--json]
+  ai-coding-runtime history import <file> [--json]
   ai-coding-runtime provider-health [provider] [--json]
   ai-coding-runtime generate "<prompt>" [--provider name] [--model model] [--run-id run-id] [--task-id task-id] [--json]
 `;

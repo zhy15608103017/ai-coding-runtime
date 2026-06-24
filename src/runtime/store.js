@@ -2,11 +2,13 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { validateRuntimePlan } from "./contracts.js";
+import { stableHash } from "./policy.js";
 
 export class FileExecutionStore {
   constructor({ workspace = defaultRuntimeHome() } = {}) {
     this.workspace = resolve(workspace);
     this.runsDirectory = join(this.workspace, "runs");
+    this.importedHistoryDirectory = join(this.workspace, "imported-history", "routing-history");
   }
 
   async createRecord(plan, { now = new Date() } = {}) {
@@ -239,6 +241,46 @@ export class FileExecutionStore {
     return records.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  async listImportedLearningRecords() {
+    await mkdir(this.importedHistoryDirectory, { recursive: true });
+    const entries = await readdir(this.importedHistoryDirectory, { withFileTypes: true });
+    const files = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json"));
+    const records = await Promise.all(
+      files.map(async (entry) =>
+        JSON.parse(await readFile(join(this.importedHistoryDirectory, entry.name), "utf8"))
+      )
+    );
+
+    return records.sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
+  }
+
+  async writeImportedLearningRecords(records = []) {
+    await mkdir(this.importedHistoryDirectory, { recursive: true });
+    const existing = new Set(
+      (await this.listImportedLearningRecords()).map((record) => record.importId).filter(Boolean)
+    );
+    let imported = 0;
+    let duplicates = 0;
+
+    for (const record of Array.isArray(records) ? records : []) {
+      if (!record?.importId) continue;
+      if (existing.has(record.importId)) {
+        duplicates += 1;
+        continue;
+      }
+
+      existing.add(record.importId);
+      await writeFile(
+        join(this.importedHistoryDirectory, importedRecordFileName(record.importId)),
+        `${JSON.stringify(record, null, 2)}\n`,
+        "utf8"
+      );
+      imported += 1;
+    }
+
+    return { status: "ok", imported, duplicates };
+  }
+
   recordPath(runId) {
     return join(this.runsDirectory, runId, "run.json");
   }
@@ -247,6 +289,10 @@ export class FileExecutionStore {
     await mkdir(join(this.runsDirectory, record.runId), { recursive: true });
     await writeFile(this.recordPath(record.runId), `${JSON.stringify(record, null, 2)}\n`, "utf8");
   }
+}
+
+function importedRecordFileName(importId) {
+  return `${stableHash({ importId })}.json`;
 }
 
 function applyRunIdToPlan(plan, runId) {

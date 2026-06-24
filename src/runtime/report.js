@@ -2,7 +2,10 @@ import { redactSecrets } from "./policy.js";
 import { createLearningProfile } from "./learning.js";
 import { isOutcomeExcludedStatus } from "./status.js";
 
-export function createReport(record, { historyRecords = [], policy = record.plan?.policyConfig } = {}) {
+export function createReport(
+  record,
+  { historyRecords = [], importedHistoryRecords = [], policy = record.plan?.policyConfig } = {}
+) {
   const tasks = record.plan.tasks;
   const modelCalls = Array.isArray(record.modelCalls) ? record.modelCalls : [];
   const workerAttempts = Array.isArray(record.workerAttempts) ? record.workerAttempts : [];
@@ -27,8 +30,12 @@ export function createReport(record, { historyRecords = [], policy = record.plan
     latestVerification,
     failureAnalysis,
   });
+  const importedRecordCount = Array.isArray(importedHistoryRecords) ? importedHistoryRecords.length : 0;
   const modelReliability = createModelReliabilityMetrics([record, ...historyRecords]);
-  const learningProfile = safeCreateLearningProfile([record, ...historyRecords], { policy });
+  const learningProfile = safeCreateLearningProfile(
+    [record, ...historyRecords, ...importedHistoryRecords],
+    { policy, importedRecordCount }
+  );
   const finalReport = {
     summary: `Planned ${tasks.length} task(s) for runtime execution.`,
     changedFiles,
@@ -605,11 +612,11 @@ function createModelReliabilityMetrics(records) {
   };
 }
 
-function safeCreateLearningProfile(records, options) {
+function safeCreateLearningProfile(records, { importedRecordCount = 0, ...options } = {}) {
   try {
-    return createLearningProfile(records, options);
+    return withImportedRecordCount(createLearningProfile(records, options), importedRecordCount);
   } catch (error) {
-    return {
+    return withImportedRecordCount({
       enabled: true,
       mode: "shadow",
       error: {
@@ -625,8 +632,16 @@ function safeCreateLearningProfile(records, options) {
       samples: [],
       buckets: [],
       recommendations: [],
-    };
+    }, importedRecordCount);
   }
+}
+
+function withImportedRecordCount(profile, importedRecordCount) {
+  return {
+    ...profile,
+    importedRecords: importedRecordCount,
+    imported_records: importedRecordCount,
+  };
 }
 
 function getExplicitVerificationOutcome(record) {

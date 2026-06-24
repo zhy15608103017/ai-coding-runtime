@@ -342,15 +342,15 @@ test("Phase 9 CLI report supports JSON and Markdown exports", async () => {
   }
 });
 
-test("Phase 9 roadmap checklist is complete while Phase 11 remains open", async () => {
+test("Phase 9 roadmap checklist is complete while Phase 12 remains open", async () => {
   const roadmap = await readFile(path.resolve("total.md"), "utf8");
   const phase9 = sectionBetween(roadmap, "## Phase 9:", "## Phase 10:");
-  const phase11 = sectionBetween(roadmap, "## Phase 11:", "## Phase 12:");
+  const phase12 = sectionBetween(roadmap, "## Phase 12:", "## Alpha Scope");
 
   for (const task of phase9.matchAll(/- \[(x| )\] /g)) {
     assert.equal(task[1], "x");
   }
-  assertSectionIncomplete(phase11, "Phase 11");
+  assertSectionIncomplete(phase12, "Phase 12");
 });
 
 function runCli(args, runtimeHome) {
