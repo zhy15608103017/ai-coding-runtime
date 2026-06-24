@@ -67,6 +67,15 @@ test("Phase 11 policy validation reports invalid learning fields", () => {
   assert.ok(validation.errors.some((error) => error.code === "policy.learning.threshold.invalid"));
 });
 
+test("Phase 11 policy validation rejects non-object learning config", () => {
+  for (const learning of ["off", false, []]) {
+    const validation = validatePolicyConfig({ learning });
+
+    assert.equal(validation.valid, false);
+    assert.ok(validation.errors.some((error) => error.code === "policy.learning.object.invalid"));
+  }
+});
+
 test("Phase 11 learning extracts privacy-safe samples from verified runs", () => {
   const record = learningRecord({
     runId: "run_passed",
@@ -222,6 +231,14 @@ test("Phase 11 learning returns disabled profile when policy disables learning",
   assert.deepEqual(profile.samples, []);
   assert.deepEqual(profile.buckets, []);
   assert.deepEqual(profile.recommendations, []);
+});
+
+test("Phase 11 learning treats non-array records as empty history", () => {
+  const profile = createLearningProfile("not records", { policy: normalizePolicyConfig() });
+
+  assert.equal(profile.recordsScanned, 0);
+  assert.equal(profile.eligibleSamples, 0);
+  assert.deepEqual(profile.samples, []);
 });
 
 test("Phase 11 learning aggregates task, tier, provider, retry, escalation, and failure metrics", () => {

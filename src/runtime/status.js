@@ -9,6 +9,24 @@ export const RUN_STATUS = {
   canceled: "canceled",
 };
 
+export const OUTCOME_EXCLUDED_STATUSES = new Set([
+  RUN_STATUS.planned,
+  RUN_STATUS.approvalRequired,
+  "approval-pending",
+  "approval_pending",
+  RUN_STATUS.approved,
+  RUN_STATUS.verifying,
+  RUN_STATUS.canceled,
+  "verification-skipped",
+  RUN_STATUS.verificationSkipped,
+  "approval-rejected",
+  "approval_rejected",
+]);
+
+export function isOutcomeExcludedStatus(status) {
+  return OUTCOME_EXCLUDED_STATUSES.has(status);
+}
+
 export function canVerifyRun(status) {
   return [
     RUN_STATUS.planned,

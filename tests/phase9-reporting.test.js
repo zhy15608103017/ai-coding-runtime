@@ -261,9 +261,21 @@ test("Phase 9 model reliability ignores records without explicit verification ou
   const canceled = reliabilityRecord("run_canceled", "canceled");
   const canceledAfterPass = reliabilityRecord("run_canceled_after_pass", "canceled", "passed");
   const skipped = reliabilityRecord("run_skipped", "verification_skipped", "skipped");
+  const hyphenApprovalPending = reliabilityRecord("run_hyphen_pending", "approval-pending", "passed");
+  const hyphenApprovalRejected = reliabilityRecord("run_hyphen_rejected", "approval-rejected", "failed");
+  const hyphenVerificationSkipped = reliabilityRecord("run_hyphen_skipped", "verification-skipped", "passed");
 
   const report = createReport(passed, {
-    historyRecords: [failed, planned, canceled, canceledAfterPass, skipped],
+    historyRecords: [
+      failed,
+      planned,
+      canceled,
+      canceledAfterPass,
+      skipped,
+      hyphenApprovalPending,
+      hyphenApprovalRejected,
+      hyphenVerificationSkipped,
+    ],
   });
   const sample = report.modelReliability.byTaskType.implementation.standard;
 

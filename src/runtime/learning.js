@@ -1,18 +1,5 @@
 import { DEFAULT_POLICY_CONFIG, normalizePolicyConfig } from "./policy.js";
-
-const EXCLUDED_STATUSES = new Set([
-  "planned",
-  "approval_required",
-  "approval-pending",
-  "approval_pending",
-  "approved",
-  "verifying",
-  "canceled",
-  "verification-skipped",
-  "verification_skipped",
-  "approval-rejected",
-  "approval_rejected",
-]);
+import { isOutcomeExcludedStatus } from "./status.js";
 
 const TIER_ORDER = ["cheap", "standard", "premium"];
 const RECOMMENDATION_BUCKET_TYPE = "task_type_difficulty_risk_verification_tier";
@@ -248,7 +235,7 @@ function createSample({ record, task, route, outcome, attempts, calls, escalatio
 }
 
 function getExplicitVerificationOutcome(record) {
-  if (!record || EXCLUDED_STATUSES.has(record.status)) return null;
+  if (!record || isOutcomeExcludedStatus(record.status)) return null;
   if (record.status === "verification_passed") return "passed";
   if (record.status === "verification_failed") return "failed";
 
@@ -285,7 +272,7 @@ function getTaskOutcome({ taskId, taskOutcomes, runOutcome, taskCount }) {
 
 function uniqueRecordsById(records) {
   const byId = new Map();
-  for (const record of records.filter(Boolean)) {
+  for (const record of (Array.isArray(records) ? records : []).filter(Boolean)) {
     byId.set(record.runId ?? byId.size, record);
   }
   return [...byId.values()];

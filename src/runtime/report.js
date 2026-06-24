@@ -1,5 +1,6 @@
 import { redactSecrets } from "./policy.js";
 import { createLearningProfile } from "./learning.js";
+import { isOutcomeExcludedStatus } from "./status.js";
 
 export function createReport(record, { historyRecords = [], policy = record.plan?.policyConfig } = {}) {
   const tasks = record.plan.tasks;
@@ -629,15 +630,7 @@ function safeCreateLearningProfile(records, options) {
 }
 
 function getExplicitVerificationOutcome(record) {
-  const excludedStatuses = new Set([
-    "planned",
-    "approval_required",
-    "approved",
-    "verifying",
-    "canceled",
-    "verification_skipped",
-  ]);
-  if (excludedStatuses.has(record.status)) {
+  if (isOutcomeExcludedStatus(record.status)) {
     return null;
   }
   if (record.status === "verification_passed") {

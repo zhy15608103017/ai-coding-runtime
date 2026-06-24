@@ -72,6 +72,10 @@ export function validatePolicyConfig(policy = {}) {
   const normalized = normalizePolicyConfig(input);
   const errors = [];
 
+  if (hasOwn(input, "learning") && !isPlainObject(input.learning)) {
+    errors.push(error("policy.learning.object.invalid", "policy.learning"));
+  }
+
   if (!isNonNegativeNumber(normalized.budget.maxCostPerRun)) {
     errors.push(error("policy.budget.max_cost.invalid", "policy.budget.maxCostPerRun"));
   }
