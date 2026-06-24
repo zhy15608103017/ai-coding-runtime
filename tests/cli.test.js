@@ -145,15 +145,17 @@ test("start command launches a local HTTP health endpoint", async () => {
 test("mcp command serves runtime tools over stdio JSON-RPC", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-mcp-cli-"));
   const child = spawn(process.execPath, [cliPath, "mcp"], {
-    cwd: path.resolve("."),
+    cwd: workspace,
     env: {
       ...process.env,
       AI_CODING_RUNTIME_HOME: workspace,
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
+  const childExit = new Promise((resolve) => child.once("exit", resolve));
 
   try {
+    const initializedLine = readFirstStdoutLine(child);
     child.stdin.write(
       `${JSON.stringify({
         jsonrpc: "2.0",
@@ -166,10 +168,11 @@ test("mcp command serves runtime tools over stdio JSON-RPC", async () => {
         },
       })}\n`
     );
-    const initialized = JSON.parse(await readFirstStdoutLine(child));
+    const initialized = JSON.parse(await initializedLine);
     assert.equal(initialized.id, 1);
     assert.equal(initialized.result.protocolVersion, "2025-06-18");
 
+    const listedLine = readFirstStdoutLine(child);
     child.stdin.write(
       `${JSON.stringify({
         jsonrpc: "2.0",
@@ -177,10 +180,11 @@ test("mcp command serves runtime tools over stdio JSON-RPC", async () => {
         method: "tools/list",
       })}\n`
     );
-    const listed = JSON.parse(await readFirstStdoutLine(child));
+    const listed = JSON.parse(await listedLine);
     assert.equal(listed.id, 2);
     assert.ok(listed.result.tools.some((tool) => tool.name === "runtime_plan"));
 
+    const calledLine = readFirstStdoutLine(child);
     child.stdin.write(
       `${JSON.stringify({
         jsonrpc: "2.0",
@@ -194,11 +198,14 @@ test("mcp command serves runtime tools over stdio JSON-RPC", async () => {
         },
       })}\n`
     );
-    const called = JSON.parse(await readFirstStdoutLine(child));
+    const called = JSON.parse(await calledLine);
     assert.equal(called.id, 3);
     assert.match(called.result.structuredContent.planId, /^plan_/);
   } finally {
-    child.kill("SIGTERM");
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGTERM");
+      await childExit;
+    }
     await rm(workspace, { recursive: true, force: true });
   }
 });

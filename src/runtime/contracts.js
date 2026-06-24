@@ -8,6 +8,7 @@ export function normalizeTaskContract(task) {
   const id = task.id ?? task.task_id;
   const dependsOn = task.dependsOn ?? task.depends_on ?? [];
   const allowedFiles = task.allowedFiles ?? task.allowed_files ?? [];
+  const referencedFiles = task.referencedFiles ?? task.referenced_files ?? [];
   const forbiddenActions = task.forbiddenActions ?? task.forbidden_actions ?? [];
   const expectedOutput = task.expectedOutput ?? task.expected_output ?? [];
   const contextNeed = task.contextNeed ?? task.context_need ?? "low";
@@ -22,6 +23,8 @@ export function normalizeTaskContract(task) {
     depends_on: dependsOn,
     allowedFiles,
     allowed_files: allowedFiles,
+    referencedFiles,
+    referenced_files: referencedFiles,
     forbiddenActions,
     forbidden_actions: forbiddenActions,
     expectedOutput,

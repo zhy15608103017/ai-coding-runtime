@@ -419,6 +419,251 @@ test("createRuntimePlanWithSupervisor uses model-generated task drafts when enab
   assert.equal(plan.tasks[2].model_tier, "premium");
 });
 
+test("createRuntimePlanWithSupervisor treats supervisor read-only file context as references", async () => {
+  const readOnlyDraft = {
+    task_id: "SP-READ",
+    title: "Inspect router routing rules",
+    goal: "Read src/runtime/router.js and summarize the tier routing rules without modifying files.",
+    difficulty: "L1",
+    risk: "low",
+    context_need: "low",
+    verification: "easy",
+    final_verification: false,
+    depends_on: [],
+    allowed_files: ["src/runtime/router.js"],
+    forbidden_actions: ["modify files"],
+    acceptance: ["router tier rules are summarized"],
+    expected_output: ["read-only summary"],
+  };
+  const finalDraft = {
+    ...supervisorPlannerTaskDrafts()[2],
+    task_id: "SP-FINAL",
+    depends_on: ["SP-READ"],
+  };
+
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "plan only: summarize src/runtime/router.js without modifying files.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      structuredOutput: {
+        tasks: [readOnlyDraft, finalDraft],
+      },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  const readOnlyTask = plan.tasks.find((task) => task.task_id === "SP-READ");
+
+  assert.equal(plan.supervisorPlanning.status, "used");
+  assert.equal(plan.validation.valid, true);
+  assert.deepEqual(readOnlyTask.allowed_files, []);
+  assert.deepEqual(readOnlyTask.referenced_files, ["src/runtime/router.js"]);
+  assert.equal(readOnlyTask.classification.edits_files, false);
+  assert.equal(readOnlyTask.model_tier, "cheap");
+});
+
+test("createRuntimePlanWithSupervisor detects read-only context from negated task text", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "plan only: inspect src/runtime/router.js without modifying files.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      structuredOutput: {
+        tasks: [
+          {
+            task_id: "SP-READ",
+            title: "Inspect router routing rules",
+            goal: "Read src/runtime/router.js without modifying files.",
+            difficulty: "L1",
+            risk: "low",
+            context_need: "low",
+            verification: "easy",
+            final_verification: false,
+            depends_on: [],
+            allowed_files: ["src/runtime/router.js"],
+            forbidden_actions: [],
+            acceptance: ["router tier rules are summarized"],
+            expected_output: ["read-only summary"],
+          },
+        ],
+      },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  const readOnlyTask = plan.tasks.find((task) => task.task_id === "SP-READ");
+
+  assert.equal(plan.supervisorPlanning.status, "used");
+  assert.deepEqual(readOnlyTask.allowed_files, []);
+  assert.deepEqual(readOnlyTask.referenced_files, ["src/runtime/router.js"]);
+  assert.equal(readOnlyTask.model_tier, "cheap");
+});
+
+test("createRuntimePlanWithSupervisor detects explicit read-only task text", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Read-only analysis of src/runtime/router.js.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      structuredOutput: {
+        tasks: [
+          {
+            task_id: "SP-READONLY",
+            title: "Read-only analysis of router routing rules",
+            goal: "Read only inspection of src/runtime/router.js tier routing.",
+            difficulty: "L1",
+            risk: "low",
+            context_need: "low",
+            verification: "easy",
+            final_verification: false,
+            depends_on: [],
+            allowed_files: ["src/runtime/router.js"],
+            forbidden_actions: [],
+            acceptance: ["router tier rules are summarized"],
+            expected_output: ["read-only summary"],
+          },
+        ],
+      },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  const readOnlyTask = plan.tasks.find((task) => task.task_id === "SP-READONLY");
+
+  assert.equal(plan.supervisorPlanning.status, "used");
+  assert.deepEqual(readOnlyTask.allowed_files, []);
+  assert.deepEqual(readOnlyTask.referenced_files, ["src/runtime/router.js"]);
+  assert.equal(readOnlyTask.classification.edits_files, false);
+  assert.equal(readOnlyTask.model_tier, "cheap");
+});
+
+test("createRuntimePlanWithSupervisor keeps implementation allowed files editable", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Implement a router change in src/runtime/router.js.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      structuredOutput: {
+        tasks: [
+          {
+            task_id: "SP-EDIT",
+            title: "Implement router change",
+            goal: "Modify files to implement the requested router behavior.",
+            difficulty: "L1",
+            risk: "low",
+            context_need: "low",
+            verification: "easy",
+            final_verification: false,
+            depends_on: [],
+            allowed_files: ["src/runtime/router.js"],
+            forbidden_actions: ["keep changes focused"],
+            acceptance: ["router behavior is updated"],
+            expected_output: ["patch"],
+          },
+        ],
+      },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  const editTask = plan.tasks.find((task) => task.task_id === "SP-EDIT");
+
+  assert.equal(plan.supervisorPlanning.status, "used");
+  assert.deepEqual(editTask.allowed_files, ["src/runtime/router.js"]);
+  assert.deepEqual(editTask.referenced_files, []);
+  assert.equal(editTask.classification.edits_files, true);
+  assert.equal(editTask.model_tier, "standard");
+});
+
+test("createRuntimePlanWithSupervisor keeps scoped edit restrictions editable", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Implement a router change without modifying files outside the allowed scope.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      structuredOutput: {
+        tasks: [
+          {
+            task_id: "SP-SCOPED-EDIT",
+            title: "Implement router change",
+            goal: "Implement the router change without modifying files outside the allowed scope.",
+            difficulty: "L1",
+            risk: "low",
+            context_need: "low",
+            verification: "easy",
+            final_verification: false,
+            depends_on: [],
+            allowed_files: ["src/runtime/router.js"],
+            forbidden_actions: ["do not edit files outside the allowed scope"],
+            acceptance: ["router behavior is updated"],
+            expected_output: ["patch"],
+          },
+        ],
+      },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  const editTask = plan.tasks.find((task) => task.task_id === "SP-SCOPED-EDIT");
+
+  assert.equal(plan.supervisorPlanning.status, "used");
+  assert.deepEqual(editTask.allowed_files, ["src/runtime/router.js"]);
+  assert.deepEqual(editTask.referenced_files, []);
+  assert.equal(editTask.classification.edits_files, true);
+  assert.equal(editTask.model_tier, "standard");
+});
+
 test("createRuntimePlanWithSupervisor falls back to deterministic planning after malformed output", async () => {
   const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
     request: "Implement a focused provider health check improvement.",
