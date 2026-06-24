@@ -24,6 +24,15 @@ export const DEFAULT_RUNTIME_CONFIG = {
     maxContextBytesPerFile: 16 * 1024,
     workerTimeoutMs: 120000,
   },
+  planning: {
+    supervisor: {
+      enabled: false,
+      provider: null,
+      model: null,
+      maxTokens: 4096,
+      timeoutMs: 60000,
+    },
+  },
   routing: {
     modelTiers: ["cheap", "standard", "premium"],
     finalVerificationTier: "premium",

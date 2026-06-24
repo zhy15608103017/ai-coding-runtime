@@ -8,6 +8,15 @@
   "storage": {
     "directory": ".ai-coding-runtime"
   },
+  "planning": {
+    "supervisor": {
+      "enabled": false,
+      "provider": null,
+      "model": null,
+      "maxTokens": 4096,
+      "timeoutMs": 60000
+    }
+  },
   "routing": {
     "modelTiers": ["cheap", "standard", "premium"],
     "finalVerificationTier": "premium",

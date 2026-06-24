@@ -1,4 +1,5 @@
 export { createRuntimePlan } from "./runtime/planner.js";
+export { createRuntimePlanWithSupervisor } from "./runtime/supervisor-planner.js";
 export {
   classifyTask,
   DEFAULT_BUDGET_POLICY,

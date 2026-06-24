@@ -13,7 +13,7 @@ V0 currently covers the Phase 1 runtime skeleton through Phase 11.0 local shadow
 - expose Streamable HTTP JSON-RPC at `POST /mcp`
 - validate task contracts before a run is persisted
 - include task graph, approval gate, validation, and plan report metadata in plans
-- include a deterministic planning prompt for host tools and future supervisor calls
+- include a deterministic planning prompt for host tools plus opt-in supervisor model planning
 - include classifier, routing trace, model registry, escalation policy, and budget metadata
 - refuse persisted execution when budget or routing policy metadata says a run is not allowed
 - expose Phase 5 provider adapters for OpenAI-compatible, Anthropic, Gemini, and local placeholder models
@@ -30,7 +30,7 @@ V0 currently covers the Phase 1 runtime skeleton through Phase 11.0 local shadow
 - enforce Phase 10 policy config for budget aliases, risk gates, workspace file policy, verification command allowlists, secret redaction, and completed-run audit export
 - expose Phase 11.0 report-derived learning profiles and shadow recommendations without changing live routing decisions
 
-V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, explicitly execute dependency-aware worker tasks with configured tier escalation and retry, apply validated text patches, run Phase 7 verification, connect to host tools through Phase 8 integration guides, produce Phase 9 cost-aware run reports, enforce Phase 10 team policy controls, and surface Phase 11.0 local learning profiles for shadow-only routing recommendations. `runtime_run` remains plan-only; worker execution happens only through the explicit execute surfaces, and routing history export/import is not complete yet.
+V0 can call configured model providers directly through the Phase 5 provider interface, accept structured worker results through the Phase 6 worker surface, optionally ask a configured supervisor model to draft dynamic task contracts before deterministic routing, explicitly execute dependency-aware worker tasks with configured tier escalation and retry, apply validated text patches, run Phase 7 verification, connect to host tools through Phase 8 integration guides, produce Phase 9 cost-aware run reports, enforce Phase 10 team policy controls, and surface Phase 11.0 local learning profiles for shadow-only routing recommendations. `runtime_run` remains plan-only; worker execution happens only through the explicit execute surfaces, and routing history export/import is not complete yet.
 Runs that include medium or high risk tasks are stored as `approval_required`. V0 provides a minimal approval input through CLI, HTTP, and MCP; approved runs can be executed explicitly, and later phases can add richer approval UI.
 Phase 4 routing is deterministic: file-editing tasks route to at least `standard`, final verification routes to `premium`, and failed low-tier attempts can be represented with escalation trace records.
 Explicit read-only planning requests such as `plan only`, `read-only`, or `不修改文件` produce low-risk plans that can be stored as `planned` without an approval gate.
@@ -102,6 +102,15 @@ Copy `runtime.config.example.json` to `runtime.config.json` and adjust it:
   },
   "storage": {
     "directory": ".ai-coding-runtime"
+  },
+  "planning": {
+    "supervisor": {
+      "enabled": false,
+      "provider": null,
+      "model": null,
+      "maxTokens": 4096,
+      "timeoutMs": 60000
+    }
   },
   "routing": {
     "modelTiers": ["cheap", "standard", "premium"],
@@ -176,6 +185,8 @@ Copy `runtime.config.example.json` to `runtime.config.json` and adjust it:
 }
 ```
 
+`planning.supervisor` is disabled by default. When enabled with a configured provider and model, `runtime_plan`, `runtime_estimate`, and `runtime_run` ask that model to draft task contracts, then the Runtime still applies its local routing, budget, approval, validation, execution, and verification rules. If supervisor planning returns malformed output or the provider call fails, planning falls back to the deterministic template and records `supervisorPlanning.status: "fallback"` in the plan.
+
 `verification.diff_check` runs `git diff --check` by default. `verification.test`, `verification.lint`, `verification.typecheck`, and `verification.custom_commands` add named command checks; `verification.commands` remains supported as a legacy command list. `runtime_verify`, `POST /api/verify`, and `ai-coding-runtime verify <run-id>` run checks in order, record stdout, stderr, exit code, duration, acceptance review, final supervisor review, and escalation metadata, then mark the run as `verification_passed`, `verification_failed`, or `verification_skipped`.
 
 `verification.final_review` controls provider-backed final review for medium/high-risk tasks. Set both `provider` and `model` to use a configured provider; when final review is required but either value is missing, verification fails instead of reporting success without review evidence.
@@ -244,7 +255,7 @@ The MCP gateway exposes:
 - `runtime_model_generate`
 - `runtime_submit_worker_result`
 
-`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyConfig`, `policyValidation`, `policyStatus`, `escalationPolicy`, and `routingTrace`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`. `runtime_execute` runs eligible worker tasks only after dependencies are satisfied, skips read-only/final-review/already-completed tasks, upgrades to the next configured tier and retries after worker failure when retry budget allows, optionally applies validated patches, optionally runs verification, and returns executed/skipped/failed task summaries plus a report. `runtime_verify` can run from `planned`, `approved`, or `verification_failed`; it accepts an optional `verification` override object and records command checks, task acceptance review, final supervisor review, and escalation evidence.
+`runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyConfig`, `policyValidation`, `policyStatus`, `escalationPolicy`, and `routingTrace`; plans created through opt-in supervisor planning also include `supervisorPlanning` / `supervisor_planning`. `planReport` is the Phase 3 plan review output for host tools to show before execution. `runtime_run` persists the same plan metadata, returns `approval_required` when human approval is required before execution, returns `planned` for explicit low-risk read-only plans, and refuses execution when `budgetStatus.allowed` or `policyStatus.allowed` is `false`. `runtime_approve` records human approval and moves the run to `approved`. `runtime_execute` runs eligible worker tasks only after dependencies are satisfied, skips read-only/final-review/already-completed tasks, upgrades to the next configured tier and retries after worker failure when retry budget allows, optionally applies validated patches, optionally runs verification, and returns executed/skipped/failed task summaries plus a report. `runtime_verify` can run from `planned`, `approved`, or `verification_failed`; it accepts an optional `verification` override object and records command checks, task acceptance review, final supervisor review, and escalation evidence.
 `runtime_model_generate` calls a configured provider through the normalized Phase 5 interface. When given `runId`, it appends model usage, estimated cost, finish reason, and request metadata to the run trace; optional `taskId` metadata is recorded for Phase 9 cost attribution without being sent to the provider.
 `runtime_submit_worker_result` validates a structured worker result against the task contract, builds worker context from `allowed_files` plus read-only `referenced_files`, rejects patches outside `allowed_files`, optionally applies the patch when `apply: true`, and records the worker attempt for reporting.
 For compatibility with existing exact-list integrations, MCP `tools/list` omits `runtime_audit`; hosts that know the tool name can still call it through `tools/call`. `runtime_audit` returns a redacted completed-run audit export with policy, routing, worker, model, verification, event, report, and integrity metadata.

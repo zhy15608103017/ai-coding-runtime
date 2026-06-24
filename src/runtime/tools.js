@@ -1,4 +1,4 @@
-import { createRuntimePlan } from "./planner.js";
+import { createRuntimePlanWithSupervisor } from "./supervisor-planner.js";
 import { reviewTaskAcceptance } from "./acceptance.js";
 import { executeRun } from "./execution.js";
 import { checkProviderHealth, generateModelResponse } from "./providers.js";
@@ -116,7 +116,7 @@ export const RUNTIME_TOOLS = [
 export async function callRuntimeTool(name, args, { store, runtimeOptions = {} } = {}) {
   switch (name) {
     case "runtime_plan":
-      return createRuntimePlan({ request: requireRequest(args), ...runtimeOptions });
+      return createRuntimePlanWithSupervisor({ request: requireRequest(args), ...runtimeOptions });
     case "runtime_estimate":
       return createEstimate(requireRequest(args), runtimeOptions);
     case "runtime_run":
@@ -178,8 +178,8 @@ export function asMcpToolResult(value) {
   };
 }
 
-function createEstimate(request, runtimeOptions = {}) {
-  const plan = createRuntimePlan({ request, ...runtimeOptions });
+async function createEstimate(request, runtimeOptions = {}) {
+  const plan = await createRuntimePlanWithSupervisor({ request, ...runtimeOptions });
 
   return {
     request,
@@ -196,6 +196,8 @@ function createEstimate(request, runtimeOptions = {}) {
     policy_validation: plan.policy_validation,
     policyStatus: plan.policyStatus,
     policy_status: plan.policy_status,
+    supervisorPlanning: plan.supervisorPlanning,
+    supervisor_planning: plan.supervisor_planning,
     routingTrace: plan.routingTrace,
     estimatedCost: plan.estimatedCost,
     approvalRequired: plan.approvalRequired,
@@ -221,7 +223,7 @@ function createEstimate(request, runtimeOptions = {}) {
 }
 
 async function createRun(request, store, runtimeOptions = {}) {
-  const plan = createRuntimePlan({ request, ...runtimeOptions });
+  const plan = await createRuntimePlanWithSupervisor({ request, ...runtimeOptions });
   const record = await store.createRecord(plan);
 
   return {

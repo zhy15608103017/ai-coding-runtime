@@ -59,6 +59,7 @@ export function createRuntimePlan({
   policyValidation = undefined,
   verification = {},
   workspace = {},
+  taskDrafts: providedTaskDrafts = null,
 } = {}) {
   if (!request || typeof request !== "string" || request.trim().length === 0) {
     throw new TypeError("createRuntimePlan requires a non-empty request string.");
@@ -84,7 +85,10 @@ export function createRuntimePlan({
   const effectiveModelRegistry = Array.isArray(modelRegistry) ? modelRegistry : DEFAULT_MODEL_REGISTRY;
   const createdAt = now.toISOString();
   const planId = createId("plan", normalizedRequest, createdAt);
-  const taskDrafts = createDefaultTaskDrafts(normalizedRequest, workspaceContext);
+  const taskDrafts =
+    Array.isArray(providedTaskDrafts) && providedTaskDrafts.length > 0
+      ? providedTaskDrafts
+      : createDefaultTaskDrafts(normalizedRequest, workspaceContext);
   const routedPlan = routePlan(taskDrafts, {
     modelRegistry: effectiveModelRegistry,
     routingPolicy: effectiveRoutingPolicy,
@@ -95,7 +99,7 @@ export function createRuntimePlan({
 
     return normalizeTaskContract({
       ...draft,
-      task_id: draft.id,
+      task_id: draft.id ?? draft.task_id,
       modelTier: routing.modelTier,
       model_tier: routing.modelTier,
       routingReason: routing.routingReason,

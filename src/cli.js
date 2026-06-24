@@ -1,7 +1,6 @@
 import {
   callRuntimeTool,
   createReport,
-  createRuntimePlan,
   FileExecutionStore,
   formatReportMarkdown,
   loadRuntimeConfig,
@@ -68,18 +67,16 @@ async function runCommand(args, io) {
 
   const config = await loadRuntimeConfig();
   const store = new FileExecutionStore({ workspace: config.storage.directory });
-  const plan = createRuntimePlan({ request, ...runtimeOptionsFromConfig(config) });
-  const record = await store.createRecord(plan);
-  const output = {
-    runId: record.runId,
-    status: record.status,
-    plan: record.plan,
-  };
+  const output = await callRuntimeTool(
+    "runtime_run",
+    { request },
+    { store, runtimeOptions: runtimeOptionsFromConfig(config) }
+  );
 
   if (options.json) {
     io.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
   } else {
-    io.stdout.write(`Created run ${record.runId} (${record.status})\n`);
+    io.stdout.write(`Created run ${output.runId} (${output.status})\n`);
   }
 
   return 0;
@@ -472,6 +469,7 @@ function runtimeOptionsFromConfig(config) {
     policy: config.policy,
     policyExplicit: config.policyExplicit,
     policyValidation: config.policyValidation,
+    planning: config.planning,
     providers: config.providers,
     execution: config.execution,
     verification: config.verification,

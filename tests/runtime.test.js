@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import * as runtimeIndex from "../src/index.js";
 import {
   callRuntimeTool,
   classifyTask,
@@ -16,6 +17,56 @@ import {
   routeTask,
   validateRuntimePlan,
 } from "../src/index.js";
+
+function supervisorPlannerTaskDrafts() {
+  return [
+    {
+      task_id: "SP-001",
+      title: "Map provider health scope",
+      goal: "Identify the files and behavior needed for the requested provider health change.",
+      difficulty: "L0",
+      risk: "low",
+      context_need: "low",
+      verification: "easy",
+      final_verification: false,
+      depends_on: [],
+      allowed_files: [],
+      forbidden_actions: ["modify files"],
+      acceptance: ["provider health scope is identified"],
+      expected_output: ["scope notes"],
+    },
+    {
+      task_id: "SP-002",
+      title: "Implement provider health change",
+      goal: "Apply the provider health behavior change inside the approved files.",
+      difficulty: "L2",
+      risk: "medium",
+      context_need: "medium",
+      verification: "medium",
+      final_verification: false,
+      depends_on: ["SP-001"],
+      allowed_files: ["src/runtime/providers.js", "tests/providers.test.js"],
+      forbidden_actions: ["edit files outside the provider health allowlist"],
+      acceptance: ["provider health change is implemented inside the allowlist"],
+      expected_output: ["patch", "test notes"],
+    },
+    {
+      task_id: "SP-003",
+      title: "Final supervisor review",
+      goal: "Review the final provider health change and verification evidence.",
+      difficulty: "L4",
+      risk: "high",
+      context_need: "high",
+      verification: "hard",
+      final_verification: true,
+      depends_on: ["SP-002"],
+      allowed_files: [],
+      forbidden_actions: ["skip final review"],
+      acceptance: ["final review records routing and verification evidence"],
+      expected_output: ["final report"],
+    },
+  ];
+}
 
 test("classifyTask returns Phase 4 classifier fields", () => {
   const classification = classifyTask({
@@ -260,6 +311,426 @@ test("createRuntimePlan returns task contracts with model routing", () => {
   assert.equal(finalTask.routing.selected_model.tier, "premium");
   assert.ok(finalTask.routing.escalation_triggers.includes("final_review"));
   assert.deepEqual(finalTask.dependsOn, [plan.tasks.at(-2).id]);
+});
+
+test("createRuntimePlan routes explicit task drafts through the existing plan contract", () => {
+  const plan = createRuntimePlan({
+    request: "Implement a focused provider health check improvement.",
+    taskDrafts: [
+      {
+        id: "T-101",
+        title: "Inspect provider health behavior",
+        goal: "Read provider health code before changing behavior.",
+        difficulty: "L0",
+        risk: "low",
+        contextNeed: "low",
+        verification: "easy",
+        dependsOn: [],
+        allowedFiles: [],
+        forbiddenActions: ["modify files"],
+        acceptance: ["provider health behavior is summarized"],
+        expectedOutput: ["summary"],
+      },
+      {
+        id: "T-102",
+        title: "Implement provider health improvement",
+        goal: "Apply the requested provider health change.",
+        difficulty: "L2",
+        risk: "medium",
+        contextNeed: "medium",
+        verification: "medium",
+        dependsOn: ["T-101"],
+        allowedFiles: ["src/runtime/providers.js", "tests/providers.test.js"],
+        forbiddenActions: ["edit files outside the provider health scope"],
+        acceptance: ["provider health change is implemented inside the allowlist"],
+        expectedOutput: ["patch", "test evidence"],
+      },
+      {
+        id: "T-103",
+        title: "Final supervisor review",
+        goal: "Review the focused provider health change and verification evidence.",
+        difficulty: "L4",
+        risk: "high",
+        contextNeed: "high",
+        verification: "hard",
+        finalVerification: true,
+        dependsOn: ["T-102"],
+        allowedFiles: [],
+        forbiddenActions: ["skip final verification"],
+        acceptance: ["final review records routing and verification evidence"],
+        expectedOutput: ["final report"],
+      },
+    ],
+  });
+
+  assert.equal(plan.validation.valid, true);
+  assert.deepEqual(
+    plan.tasks.map((task) => task.task_id),
+    ["T-101", "T-102", "T-103"]
+  );
+  assert.equal(plan.tasks[1].model_tier, "standard");
+  assert.equal(plan.tasks[2].model_tier, "premium");
+  assert.equal(plan.tasks[2].final_verification, true);
+  assert.deepEqual(plan.dependencies, [
+    { from: "T-101", to: "T-102" },
+    { from: "T-102", to: "T-103" },
+  ]);
+});
+
+test("createRuntimePlanWithSupervisor uses model-generated task drafts when enabled", async () => {
+  let providerRequest;
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Implement a focused provider health check improvement.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async (request) => {
+      providerRequest = request;
+      return {
+        provider: request.provider,
+        model: request.model,
+        structuredOutput: {
+          tasks: supervisorPlannerTaskDrafts(),
+        },
+        usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+        costEstimate: { currency: "USD", estimatedCost: 0.01, estimated_cost: 0.01 },
+        finishReason: "stop",
+        request: { attempts: 1, durationMs: 5, duration_ms: 5 },
+      };
+    },
+  });
+
+  assert.equal(providerRequest.provider, "openai-compatible");
+  assert.equal(providerRequest.model, "premium-planner");
+  assert.match(providerRequest.messages.at(-1).content, /Task Contract/);
+  assert.equal(plan.validation.valid, true);
+  assert.equal(plan.supervisorPlanning.status, "used");
+  assert.equal(plan.supervisor_planning.status, "used");
+  assert.equal(plan.supervisorPlanning.taskCount, 3);
+  assert.deepEqual(
+    plan.tasks.map((task) => task.task_id),
+    ["SP-001", "SP-002", "SP-003"]
+  );
+  assert.equal(plan.tasks[1].model_tier, "standard");
+  assert.equal(plan.tasks[2].model_tier, "premium");
+});
+
+test("createRuntimePlanWithSupervisor falls back to deterministic planning after malformed output", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Implement a focused provider health check improvement.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      text: "not-json",
+      structuredOutput: null,
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      costEstimate: { currency: "USD", estimatedCost: 0, estimated_cost: 0 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  assert.equal(plan.validation.valid, true);
+  assert.equal(plan.supervisorPlanning.status, "fallback");
+  assert.match(plan.supervisorPlanning.reason, /tasks/i);
+  assert.deepEqual(
+    plan.tasks.map((task) => task.task_id).slice(0, 2),
+    ["T-001", "T-002"]
+  );
+});
+
+test("supervisor fallback metadata redacts provider error secrets", async () => {
+  const secret = "sk-test-secret-123";
+  const policy = {
+    secrets: {
+      patterns: ["apiKey"],
+    },
+  };
+  const runtimeOptions = {
+    policy,
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    execution: {
+      generate: async () => {
+        throw new Error(`Provider failed with apiKey=${secret}`);
+      },
+    },
+  };
+
+  const planned = await callRuntimeTool(
+    "runtime_plan",
+    { request: "Implement a focused provider health check improvement." },
+    { runtimeOptions }
+  );
+
+  assert.equal(planned.validation.valid, true);
+  assert.equal(planned.supervisorPlanning.status, "fallback");
+  assert.equal(planned.supervisorPlanning.reason.includes(secret), false);
+  assert.equal(planned.planReport.supervisor_planning.reason.includes(secret), false);
+
+  const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-supervisor-redact-"));
+  const store = new FileExecutionStore({ workspace });
+
+  try {
+    const run = await callRuntimeTool(
+      "runtime_run",
+      { request: "Implement a focused provider health check improvement." },
+      { store, runtimeOptions }
+    );
+
+    assert.equal(run.plan.supervisorPlanning.reason.includes(secret), false);
+    assert.equal(run.plan.planReport.supervisor_planning.reason.includes(secret), false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("createRuntimePlanWithSupervisor falls back when provider or model is missing", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Implement a focused provider health check improvement.",
+    planning: {
+      supervisor: {
+        enabled: true,
+      },
+    },
+  });
+
+  assert.equal(plan.validation.valid, true);
+  assert.equal(plan.supervisorPlanning.status, "fallback");
+  assert.match(plan.supervisorPlanning.reason, /provider and model/i);
+  assert.deepEqual(
+    plan.tasks.map((task) => task.task_id).slice(0, 2),
+    ["T-001", "T-002"]
+  );
+});
+
+test("createRuntimePlanWithSupervisor does not use default providers for missing supervisor model", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Implement a focused provider health check improvement.",
+    planning: {
+      supervisor: {
+        enabled: true,
+      },
+    },
+    providers: {
+      defaultProvider: "openai-compatible",
+      entries: {
+        "openai-compatible": {
+          type: "openai-compatible",
+          defaultModel: "default-model-that-must-not-run",
+        },
+      },
+    },
+    generate: async () => {
+      throw new Error("generate should not be called without explicit supervisor provider/model");
+    },
+  });
+
+  assert.equal(plan.validation.valid, true);
+  assert.equal(plan.supervisorPlanning.status, "fallback");
+  assert.match(plan.supervisorPlanning.reason, /provider and model/i);
+});
+
+test("createRuntimePlanWithSupervisor falls back when supervisor drafts fail local validation", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Implement a focused provider health check improvement.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      structuredOutput: {
+        tasks: [
+          {
+            ...supervisorPlannerTaskDrafts()[0],
+            task_id: "SP-DUP",
+          },
+          {
+            ...supervisorPlannerTaskDrafts()[1],
+            task_id: "SP-DUP",
+            depends_on: ["SP-DUP"],
+          },
+        ],
+      },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  assert.equal(plan.validation.valid, true);
+  assert.equal(plan.supervisorPlanning.status, "fallback");
+  assert.match(plan.supervisorPlanning.reason, /invalid task contracts/i);
+  assert.deepEqual(
+    plan.tasks.map((task) => task.task_id).slice(0, 2),
+    ["T-001", "T-002"]
+  );
+});
+
+test("createRuntimePlanWithSupervisor falls back when supervisor drafts miss required fields", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Implement a focused provider health check improvement.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      structuredOutput: {
+        tasks: [
+          {
+            title: "Incomplete supervisor task",
+          },
+        ],
+      },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  assert.equal(plan.validation.valid, true);
+  assert.equal(plan.supervisorPlanning.status, "fallback");
+  assert.match(plan.supervisorPlanning.reason, /task_id/i);
+  assert.deepEqual(
+    plan.tasks.map((task) => task.task_id).slice(0, 2),
+    ["T-001", "T-002"]
+  );
+});
+
+test("createRuntimePlanWithSupervisor falls back when supervisor drafts use invalid enums", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Implement a focused provider health check improvement.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      structuredOutput: {
+        tasks: [
+          {
+            ...supervisorPlannerTaskDrafts()[0],
+            difficulty: "tiny",
+          },
+        ],
+      },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  assert.equal(plan.validation.valid, true);
+  assert.equal(plan.supervisorPlanning.status, "fallback");
+  assert.match(plan.supervisorPlanning.reason, /difficulty/i);
+  assert.deepEqual(
+    plan.tasks.map((task) => task.task_id).slice(0, 2),
+    ["T-001", "T-002"]
+  );
+});
+
+test("runtime_plan uses supervisor planning when explicitly enabled", async () => {
+  const planned = await callRuntimeTool(
+    "runtime_plan",
+    { request: "Implement a focused provider health check improvement." },
+    {
+      runtimeOptions: {
+        planning: {
+          supervisor: {
+            enabled: true,
+            provider: "openai-compatible",
+            model: "premium-planner",
+          },
+        },
+        execution: {
+          generate: async () => ({
+            provider: "openai-compatible",
+            model: "premium-planner",
+            structuredOutput: {
+              tasks: supervisorPlannerTaskDrafts(),
+            },
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+            finishReason: "stop",
+            request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+          }),
+        },
+      },
+    }
+  );
+
+  assert.equal(planned.supervisorPlanning.status, "used");
+  assert.deepEqual(
+    planned.tasks.map((task) => task.task_id),
+    ["SP-001", "SP-002", "SP-003"]
+  );
+});
+
+test("runtime_estimate preserves supervisor planning metadata", async () => {
+  const estimate = await callRuntimeTool(
+    "runtime_estimate",
+    { request: "Implement a focused provider health check improvement." },
+    {
+      runtimeOptions: {
+        planning: {
+          supervisor: {
+            enabled: true,
+            provider: "openai-compatible",
+            model: "premium-planner",
+          },
+        },
+        execution: {
+          generate: async () => ({
+            provider: "openai-compatible",
+            model: "premium-planner",
+            structuredOutput: {
+              tasks: supervisorPlannerTaskDrafts(),
+            },
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+            finishReason: "stop",
+            request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+          }),
+        },
+      },
+    }
+  );
+
+  assert.equal(estimate.supervisorPlanning.status, "used");
+  assert.equal(estimate.supervisor_planning.status, "used");
 });
 
 test("createRuntimePlan supports low-risk read-only planning without approval", async () => {
@@ -2025,6 +2496,14 @@ test("loadRuntimeConfig merges defaults, config file, and environment overrides"
             maxContextBytesPerFile: 8192,
             workerTimeoutMs: 150000,
           },
+          planning: {
+            supervisor: {
+              enabled: true,
+              provider: "openai-compatible",
+              model: "premium-planner",
+              maxTokens: 2048,
+            },
+          },
         },
         null,
         2
@@ -2049,6 +2528,10 @@ test("loadRuntimeConfig merges defaults, config file, and environment overrides"
     assert.equal(config.routing.modelRegistry.length, 3);
     assert.equal(config.execution.maxContextBytesPerFile, 8192);
     assert.equal(config.execution.workerTimeoutMs, 150000);
+    assert.equal(config.planning.supervisor.enabled, true);
+    assert.equal(config.planning.supervisor.provider, "openai-compatible");
+    assert.equal(config.planning.supervisor.model, "premium-planner");
+    assert.equal(config.planning.supervisor.maxTokens, 2048);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
