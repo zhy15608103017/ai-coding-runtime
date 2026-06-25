@@ -15,6 +15,7 @@ export {
 } from "./runtime/router.js";
 export { FileExecutionStore } from "./runtime/store.js";
 export { createReport, formatReportMarkdown } from "./runtime/report.js";
+export { createRunInspection, formatInspectionMarkdown } from "./runtime/inspection.js";
 export { createLearningProfile } from "./runtime/learning.js";
 export {
   ROUTING_HISTORY_SCHEMA_VERSION,

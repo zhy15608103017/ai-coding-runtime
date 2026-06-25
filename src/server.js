@@ -51,6 +51,16 @@ export function createRuntimeHttpServer({
         return sendJson(response, 200, summarizeRecord(record));
       }
 
+      const inspectMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/inspect$/);
+      if (request.method === "GET" && inspectMatch) {
+        const inspected = await callRuntimeTool(
+          "runtime_inspect",
+          { runId: inspectMatch[1] },
+          { store, runtimeOptions }
+        );
+        return sendJson(response, 200, inspected);
+      }
+
       const cancelMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/cancel$/);
       if (request.method === "POST" && cancelMatch) {
         const body = await readJsonBody(request);

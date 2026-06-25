@@ -171,7 +171,7 @@ export function formatReportMarkdown(report) {
     ...(report.routingDecisions?.length
       ? report.routingDecisions.map(
           (route) =>
-            `- ${route.taskId}: ${route.modelTier} (${route.reason}; selected: ${route.selectedModel ?? "none"})`
+            `- ${route.taskId}: ${route.modelTier} (${route.reason}; selected: ${formatSelectedModel(route.selectedModel)})`
         )
       : ["- skipped: no routing trace recorded."]),
     ``,
@@ -179,7 +179,7 @@ export function formatReportMarkdown(report) {
     ...(report.perTaskModelUsage?.length
       ? report.perTaskModelUsage.map(
           (task) =>
-            `- ${task.taskId}: ${task.modelTier}/${task.selectedModel ?? "none"} planned ${task.currency} ${task.estimatedCost}, actual ${task.currency} ${task.actualCost}`
+            `- ${task.taskId}: ${task.modelTier}/${formatSelectedModel(task.selectedModel)} planned ${task.currency} ${task.estimatedCost}, actual ${task.currency} ${task.actualCost}`
         )
       : ["- none recorded"]),
     ``,
@@ -824,6 +824,16 @@ function formatModelReliability(modelReliability) {
     (sample) =>
       `- ${sample.taskType}/${sample.modelTier}: ${sample.successes}/${sample.attempts} success (${sample.successRate})`
   );
+}
+
+function formatSelectedModel(value) {
+  if (!value) return "none";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const provider = value.provider ? `${value.provider}/` : "";
+    return `${provider}${value.model ?? value.id ?? "unknown"}`;
+  }
+  return String(value);
 }
 
 function formatLearningProfile(profile) {

@@ -317,6 +317,22 @@ test("Phase 9 markdown model call details support snake_case cost fields", () =>
   assert.match(markdown, /gpt-snake: 11 tokens, USD 0\.000011/);
 });
 
+test("Phase 9 markdown formats selected model objects without object placeholders", () => {
+  const record = reliabilityRecord("run_selected_model_object", "verification_passed", "passed");
+  record.plan.routingTrace[0].selected_model = {
+    provider: "openai-compatible",
+    model: "gpt-readable",
+    tier: "standard",
+  };
+
+  const report = createReport(record);
+  const markdown = formatReportMarkdown(report);
+
+  assert.match(markdown, /selected: openai-compatible\/gpt-readable/);
+  assert.match(markdown, /standard\/openai-compatible\/gpt-readable planned/);
+  assert.doesNotMatch(markdown, /\[object Object\]/);
+});
+
 test("Phase 9 CLI report supports JSON and Markdown exports", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "ai-runtime-phase9-cli-"));
 

@@ -19,6 +19,8 @@ export async function runCli(argv, io = process) {
         return await runCommand(rest, io);
       case "status":
         return await statusCommand(rest, io);
+      case "inspect":
+        return await inspectCommand(rest, io);
       case "verify":
         return await verifyCommand(rest, io);
       case "execute":
@@ -207,6 +209,34 @@ async function auditCommand(args, io) {
     { store, runtimeOptions: runtimeOptionsFromConfig(config) }
   );
   io.stdout.write(`${JSON.stringify(audit, null, 2)}\n`);
+  return 0;
+}
+
+async function inspectCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const [runId] = positional;
+
+  if (!runId) {
+    throw new Error("inspect requires a run id.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const inspected = await callRuntimeTool(
+    "runtime_inspect",
+    {
+      runId,
+      format: options.json ? "json" : "markdown",
+    },
+    { store, runtimeOptions: runtimeOptionsFromConfig(config) }
+  );
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify(inspected, null, 2)}\n`);
+  } else {
+    io.stdout.write(inspected.markdown);
+  }
+
   return 0;
 }
 
@@ -550,6 +580,7 @@ Usage:
   ai-coding-runtime mcp
   ai-coding-runtime run "<request>" [--json]
   ai-coding-runtime status <run-id> [--json]
+  ai-coding-runtime inspect <run-id> [--json]
   ai-coding-runtime execute <run-id> [--no-apply] [--no-verify] [--json]
   ai-coding-runtime verify <run-id> [--json]
   ai-coding-runtime approve <run-id> [--json]

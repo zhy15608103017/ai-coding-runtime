@@ -1,6 +1,7 @@
 import { createRuntimePlanWithSupervisor } from "./supervisor-planner.js";
 import { reviewTaskAcceptance } from "./acceptance.js";
 import { executeRun } from "./execution.js";
+import { createRunInspection, formatInspectionMarkdown } from "./inspection.js";
 import { checkProviderHealth, generateModelResponse } from "./providers.js";
 import { createReport, formatReportMarkdown } from "./report.js";
 import { RUN_STATUS, canVerifyRun } from "./status.js";
@@ -34,6 +35,11 @@ export const RUNTIME_TOOLS = [
     name: "runtime_collect",
     description: "Collect intermediate artifacts, events, and task outputs for a run.",
     inputSchema: runIdSchema(),
+  },
+  {
+    name: "runtime_inspect",
+    description: "Return a concise run inspection view with task routing, acceptance, verification, and escalation state.",
+    inputSchema: inspectSchema(),
   },
   {
     name: "runtime_execute",
@@ -125,6 +131,8 @@ export async function callRuntimeTool(name, args, { store, runtimeOptions = {} }
       return readStatus(requireRunId(args), store);
     case "runtime_collect":
       return collectRun(requireRunId(args), store);
+    case "runtime_inspect":
+      return inspectRun(requireRunId(args), args, store, runtimeOptions);
     case "runtime_execute":
       return executeRun({
         runId: requireRunId(args),
@@ -165,7 +173,12 @@ export async function callRuntimeTool(name, args, { store, runtimeOptions = {} }
 }
 
 export function asMcpToolResult(value) {
-  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  const text =
+    typeof value === "string"
+      ? value
+      : typeof value?.markdown === "string"
+        ? value.markdown
+        : JSON.stringify(value, null, 2);
 
   return {
     content: [
@@ -456,6 +469,22 @@ async function generateSupervisorModelResponse({ runId, request, store, runtimeO
   });
 
   return response;
+}
+
+async function inspectRun(runId, args, store, runtimeOptions = {}) {
+  const record = await store.readRecord(runId);
+  const inspection = redactSecrets(createRunInspection(record), runtimeOptions.policy);
+
+  if (args?.format === "markdown") {
+    return {
+      runId,
+      format: "markdown",
+      markdown: formatInspectionMarkdown(inspection),
+      inspection,
+    };
+  }
+
+  return inspection;
 }
 
 function prepareSupervisorModelRequest(request, runtimeOptions = {}) {
@@ -786,6 +815,18 @@ function runIdSchema() {
     type: "object",
     properties: {
       runId: { type: "string" },
+    },
+    required: ["runId"],
+    additionalProperties: false,
+  };
+}
+
+function inspectSchema() {
+  return {
+    type: "object",
+    properties: {
+      runId: { type: "string" },
+      format: { type: "string", enum: ["json", "markdown"] },
     },
     required: ["runId"],
     additionalProperties: false,

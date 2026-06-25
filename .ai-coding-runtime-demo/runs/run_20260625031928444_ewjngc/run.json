@@ -1,0 +1,3831 @@
+{
+  "runId": "run_20260625031928444_ewjngc",
+  "status": "verification_failed",
+  "request": "修改 src/runtime/inspection.js 并补 tests/inspection.test.js",
+  "createdAt": "2026-06-25T03:19:28.444Z",
+  "updatedAt": "2026-06-25T03:21:35.219Z",
+  "plan": {
+    "schemaVersion": "runtime.plan.v1",
+    "planId": "plan_20260625031928_15fekqk",
+    "request": "修改 src/runtime/inspection.js 并补 tests/inspection.test.js",
+    "createdAt": "2026-06-25T03:19:28.373Z",
+    "workspaceSummary": {
+      "cwd": "D:\\github\\ai-coding-runtime",
+      "totalFiles": 125,
+      "total_files": 125,
+      "matchedRequestFiles": [
+        "src/runtime/inspection.js",
+        "tests/inspection.test.js"
+      ],
+      "matched_request_files": [
+        "src/runtime/inspection.js",
+        "tests/inspection.test.js"
+      ],
+      "projectSignals": [
+        "node-package",
+        "src-directory",
+        "tests-directory",
+        "docs-directory",
+        "runtime-config"
+      ],
+      "project_signals": [
+        "node-package",
+        "src-directory",
+        "tests-directory",
+        "docs-directory",
+        "runtime-config"
+      ]
+    },
+    "workspace_summary": {
+      "cwd": "D:\\github\\ai-coding-runtime",
+      "totalFiles": 125,
+      "total_files": 125,
+      "matchedRequestFiles": [
+        "src/runtime/inspection.js",
+        "tests/inspection.test.js"
+      ],
+      "matched_request_files": [
+        "src/runtime/inspection.js",
+        "tests/inspection.test.js"
+      ],
+      "projectSignals": [
+        "node-package",
+        "src-directory",
+        "tests-directory",
+        "docs-directory",
+        "runtime-config"
+      ],
+      "project_signals": [
+        "node-package",
+        "src-directory",
+        "tests-directory",
+        "docs-directory",
+        "runtime-config"
+      ]
+    },
+    "modelTiers": [
+      {
+        "id": "cheap",
+        "label": "Cheap",
+        "description": "Low-cost tier for read-only analysis and low-risk generation."
+      },
+      {
+        "id": "standard",
+        "label": "Standard",
+        "description": "Balanced tier for local code changes with ordinary risk."
+      },
+      {
+        "id": "premium",
+        "label": "Premium",
+        "description": "Strong tier for high-risk work, hard verification, and final review."
+      }
+    ],
+    "modelTierAliases": {
+      "cheap": "cheap",
+      "standard": "standard",
+      "premium": "premium"
+    },
+    "model_tier_aliases": {
+      "cheap": "cheap",
+      "standard": "standard",
+      "premium": "premium"
+    },
+    "modelRegistry": [
+      {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4-mini",
+        "tier": "cheap",
+        "cost_hint": {
+          "label": "low",
+          "estimated_usd_per_call": 0.01
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "summarize",
+          "extract"
+        ],
+        "strengths": [
+          "read-only analysis",
+          "summaries",
+          "simple generation"
+        ],
+        "blocked_task_types": [
+          "file_edit",
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4",
+        "tier": "standard",
+        "cost_hint": {
+          "label": "medium",
+          "estimated_usd_per_call": 0.05
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "summarize"
+        ],
+        "strengths": [
+          "local code changes",
+          "tests",
+          "bounded refactors"
+        ],
+        "blocked_task_types": [
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      {
+        "provider": "openai-compatible",
+        "model": "gpt-5.5",
+        "tier": "premium",
+        "cost_hint": {
+          "label": "high",
+          "estimated_usd_per_call": 0.2
+        },
+        "context_window": 256000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "review",
+          "plan"
+        ],
+        "strengths": [
+          "architecture",
+          "security review",
+          "cross-module changes",
+          "final verification"
+        ],
+        "blocked_task_types": []
+      }
+    ],
+    "model_registry": [
+      {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4-mini",
+        "tier": "cheap",
+        "cost_hint": {
+          "label": "low",
+          "estimated_usd_per_call": 0.01
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "summarize",
+          "extract"
+        ],
+        "strengths": [
+          "read-only analysis",
+          "summaries",
+          "simple generation"
+        ],
+        "blocked_task_types": [
+          "file_edit",
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4",
+        "tier": "standard",
+        "cost_hint": {
+          "label": "medium",
+          "estimated_usd_per_call": 0.05
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "summarize"
+        ],
+        "strengths": [
+          "local code changes",
+          "tests",
+          "bounded refactors"
+        ],
+        "blocked_task_types": [
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      {
+        "provider": "openai-compatible",
+        "model": "gpt-5.5",
+        "tier": "premium",
+        "cost_hint": {
+          "label": "high",
+          "estimated_usd_per_call": 0.2
+        },
+        "context_window": 256000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "review",
+          "plan"
+        ],
+        "strengths": [
+          "architecture",
+          "security review",
+          "cross-module changes",
+          "final verification"
+        ],
+        "blocked_task_types": []
+      }
+    ],
+    "routingPolicy": {
+      "finalVerificationTier": "premium",
+      "fileEditingMinTier": "standard",
+      "lowConfidenceThreshold": 0.6,
+      "difficultyMinTier": {
+        "L0": "cheap",
+        "L1": "cheap",
+        "L2": "standard",
+        "L3": "premium",
+        "L4": "premium"
+      },
+      "riskMinTier": {
+        "low": "cheap",
+        "medium": "standard",
+        "high": "premium"
+      },
+      "contextMinTier": {
+        "low": "cheap",
+        "medium": "standard",
+        "high": "premium"
+      },
+      "verificationMinTier": {
+        "easy": "cheap",
+        "medium": "standard",
+        "hard": "premium"
+      }
+    },
+    "routing_policy": {
+      "finalVerificationTier": "premium",
+      "fileEditingMinTier": "standard",
+      "lowConfidenceThreshold": 0.6,
+      "difficultyMinTier": {
+        "L0": "cheap",
+        "L1": "cheap",
+        "L2": "standard",
+        "L3": "premium",
+        "L4": "premium"
+      },
+      "riskMinTier": {
+        "low": "cheap",
+        "medium": "standard",
+        "high": "premium"
+      },
+      "contextMinTier": {
+        "low": "cheap",
+        "medium": "standard",
+        "high": "premium"
+      },
+      "verificationMinTier": {
+        "easy": "cheap",
+        "medium": "standard",
+        "hard": "premium"
+      }
+    },
+    "budgetPolicy": {
+      "currency": "USD",
+      "maxCostPerRun": 1,
+      "maxCallsPerRun": 20,
+      "maxRetryCount": 8
+    },
+    "budget_policy": {
+      "currency": "USD",
+      "maxCostPerRun": 1,
+      "maxCallsPerRun": 20,
+      "maxRetryCount": 8
+    },
+    "escalationPolicy": {
+      "triggers": [
+        "failed_tests",
+        "malformed_output",
+        "forbidden_file_access",
+        "low_classifier_confidence",
+        "user_policy_violation"
+      ],
+      "tierOrder": [
+        "cheap",
+        "standard",
+        "premium"
+      ],
+      "humanApprovalReasons": [
+        "user_policy_violation",
+        "forbidden_file_access"
+      ]
+    },
+    "escalation_policy": {
+      "triggers": [
+        "failed_tests",
+        "malformed_output",
+        "forbidden_file_access",
+        "low_classifier_confidence",
+        "user_policy_violation"
+      ],
+      "tierOrder": [
+        "cheap",
+        "standard",
+        "premium"
+      ],
+      "humanApprovalReasons": [
+        "user_policy_violation",
+        "forbidden_file_access"
+      ]
+    },
+    "policyConfig": {
+      "schemaVersion": "runtime.policy.v1",
+      "budget": {
+        "maxCostPerRun": 1,
+        "maxWorkerRetries": 8,
+        "maxCallsPerRun": 20
+      },
+      "routing": {
+        "finalReviewModelTier": "premium",
+        "securityTasksMinTier": "premium",
+        "readonlyTasksAllowLocalModels": false
+      },
+      "learning": {
+        "enabled": true,
+        "mode": "shadow",
+        "minSamples": 5,
+        "cheapSuccessThreshold": 0.85,
+        "strongerFailureThreshold": 0.3,
+        "maxRetryRateForDowngrade": 0.15,
+        "maxEscalationRateForDowngrade": 0.1
+      },
+      "safety": {
+        "requireHumanApprovalForHighRisk": true,
+        "requireTestsForCodeChanges": false,
+        "blockSecretExfiltration": true,
+        "blockUnapprovedNetworkAccess": false
+      },
+      "workspace": {
+        "trusted": true,
+        "allowedFiles": [],
+        "blockedFiles": [
+          ".env",
+          ".env.*",
+          "*.pem",
+          "*.key",
+          "secrets/**"
+        ]
+      },
+      "commands": {
+        "allowlist": [],
+        "blockNetworkByDefault": false
+      },
+      "secrets": {
+        "redactionText": "[REDACTED]",
+        "patterns": [
+          "api[_-]?key",
+          "token",
+          "secret",
+          "password",
+          "credential"
+        ]
+      },
+      "audit": {
+        "includeTraceViewerData": true
+      }
+    },
+    "policy_config": {
+      "schemaVersion": "runtime.policy.v1",
+      "budget": {
+        "maxCostPerRun": 1,
+        "maxWorkerRetries": 8,
+        "maxCallsPerRun": 20
+      },
+      "routing": {
+        "finalReviewModelTier": "premium",
+        "securityTasksMinTier": "premium",
+        "readonlyTasksAllowLocalModels": false
+      },
+      "learning": {
+        "enabled": true,
+        "mode": "shadow",
+        "minSamples": 5,
+        "cheapSuccessThreshold": 0.85,
+        "strongerFailureThreshold": 0.3,
+        "maxRetryRateForDowngrade": 0.15,
+        "maxEscalationRateForDowngrade": 0.1
+      },
+      "safety": {
+        "requireHumanApprovalForHighRisk": true,
+        "requireTestsForCodeChanges": false,
+        "blockSecretExfiltration": true,
+        "blockUnapprovedNetworkAccess": false
+      },
+      "workspace": {
+        "trusted": true,
+        "allowedFiles": [],
+        "blockedFiles": [
+          ".env",
+          ".env.*",
+          "*.pem",
+          "*.key",
+          "secrets/**"
+        ]
+      },
+      "commands": {
+        "allowlist": [],
+        "blockNetworkByDefault": false
+      },
+      "secrets": {
+        "redactionText": "[REDACTED]",
+        "patterns": [
+          "api[_-]?key",
+          "token",
+          "secret",
+          "password",
+          "credential"
+        ]
+      },
+      "audit": {
+        "includeTraceViewerData": true
+      }
+    },
+    "policyValidation": {
+      "valid": true,
+      "errors": [],
+      "policy": {
+        "schemaVersion": "runtime.policy.v1",
+        "budget": {
+          "maxCostPerRun": 1,
+          "maxWorkerRetries": 8,
+          "maxCallsPerRun": 20
+        },
+        "routing": {
+          "finalReviewModelTier": "premium",
+          "securityTasksMinTier": "premium",
+          "readonlyTasksAllowLocalModels": false
+        },
+        "learning": {
+          "enabled": true,
+          "mode": "shadow",
+          "minSamples": 5,
+          "cheapSuccessThreshold": 0.85,
+          "strongerFailureThreshold": 0.3,
+          "maxRetryRateForDowngrade": 0.15,
+          "maxEscalationRateForDowngrade": 0.1
+        },
+        "safety": {
+          "requireHumanApprovalForHighRisk": true,
+          "requireTestsForCodeChanges": false,
+          "blockSecretExfiltration": true,
+          "blockUnapprovedNetworkAccess": false
+        },
+        "workspace": {
+          "trusted": true,
+          "allowedFiles": [],
+          "blockedFiles": [
+            ".env",
+            ".env.*",
+            "*.pem",
+            "*.key",
+            "secrets/**"
+          ]
+        },
+        "commands": {
+          "allowlist": [],
+          "blockNetworkByDefault": false
+        },
+        "secrets": {
+          "redactionText": "[REDACTED]",
+          "patterns": [
+            "api[_-]?key",
+            "token",
+            "secret",
+            "password",
+            "credential"
+          ]
+        },
+        "audit": {
+          "includeTraceViewerData": true
+        }
+      }
+    },
+    "policy_validation": {
+      "valid": true,
+      "errors": [],
+      "policy": {
+        "schemaVersion": "runtime.policy.v1",
+        "budget": {
+          "maxCostPerRun": 1,
+          "maxWorkerRetries": 8,
+          "maxCallsPerRun": 20
+        },
+        "routing": {
+          "finalReviewModelTier": "premium",
+          "securityTasksMinTier": "premium",
+          "readonlyTasksAllowLocalModels": false
+        },
+        "learning": {
+          "enabled": true,
+          "mode": "shadow",
+          "minSamples": 5,
+          "cheapSuccessThreshold": 0.85,
+          "strongerFailureThreshold": 0.3,
+          "maxRetryRateForDowngrade": 0.15,
+          "maxEscalationRateForDowngrade": 0.1
+        },
+        "safety": {
+          "requireHumanApprovalForHighRisk": true,
+          "requireTestsForCodeChanges": false,
+          "blockSecretExfiltration": true,
+          "blockUnapprovedNetworkAccess": false
+        },
+        "workspace": {
+          "trusted": true,
+          "allowedFiles": [],
+          "blockedFiles": [
+            ".env",
+            ".env.*",
+            "*.pem",
+            "*.key",
+            "secrets/**"
+          ]
+        },
+        "commands": {
+          "allowlist": [],
+          "blockNetworkByDefault": false
+        },
+        "secrets": {
+          "redactionText": "[REDACTED]",
+          "patterns": [
+            "api[_-]?key",
+            "token",
+            "secret",
+            "password",
+            "credential"
+          ]
+        },
+        "audit": {
+          "includeTraceViewerData": true
+        }
+      }
+    },
+    "budgetStatus": {
+      "allowed": true,
+      "currency": "USD",
+      "estimatedCost": 0.33,
+      "estimated_cost": 0.33,
+      "estimatedCalls": 6,
+      "estimated_calls": 6,
+      "estimatedRetries": 5,
+      "estimated_retries": 5,
+      "maxCostPerRun": 1,
+      "max_cost_per_run": 1,
+      "maxCallsPerRun": 20,
+      "max_calls_per_run": 20,
+      "maxRetryCount": 8,
+      "max_retry_count": 8,
+      "violations": []
+    },
+    "budget_status": {
+      "allowed": true,
+      "currency": "USD",
+      "estimatedCost": 0.33,
+      "estimated_cost": 0.33,
+      "estimatedCalls": 6,
+      "estimated_calls": 6,
+      "estimatedRetries": 5,
+      "estimated_retries": 5,
+      "maxCostPerRun": 1,
+      "max_cost_per_run": 1,
+      "maxCallsPerRun": 20,
+      "max_calls_per_run": 20,
+      "maxRetryCount": 8,
+      "max_retry_count": 8,
+      "violations": []
+    },
+    "policyStatus": {
+      "allowed": true,
+      "violations": []
+    },
+    "policy_status": {
+      "allowed": true,
+      "violations": []
+    },
+    "routingTrace": [
+      {
+        "task_id": "T-001",
+        "model_tier": "cheap",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4-mini",
+          "tier": "cheap",
+          "cost_hint": {
+            "label": "low",
+            "estimated_usd_per_call": 0.01
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "summarize",
+            "extract"
+          ],
+          "strengths": [
+            "read-only analysis",
+            "summaries",
+            "simple generation"
+          ],
+          "blocked_task_types": [
+            "file_edit",
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L0",
+          "risk": "low",
+          "context_need": "low",
+          "contextNeed": "low",
+          "verification": "easy",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L0",
+            "risk=low",
+            "context_need=low",
+            "verification=easy",
+            "task is read-only or review-only"
+          ]
+        },
+        "reason": "L0 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+        "reasons": [
+          "L0 default routing tier",
+          "low-risk minimum tier",
+          "low context requirement",
+          "easy verification strength"
+        ],
+        "escalation_triggers": [
+          "missing_result",
+          "conflicting_result"
+        ]
+      },
+      {
+        "task_id": "T-002",
+        "model_tier": "cheap",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4-mini",
+          "tier": "cheap",
+          "cost_hint": {
+            "label": "low",
+            "estimated_usd_per_call": 0.01
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "summarize",
+            "extract"
+          ],
+          "strengths": [
+            "read-only analysis",
+            "summaries",
+            "simple generation"
+          ],
+          "blocked_task_types": [
+            "file_edit",
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L1",
+          "risk": "low",
+          "context_need": "low",
+          "contextNeed": "low",
+          "verification": "easy",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L1",
+            "risk=low",
+            "context_need=low",
+            "verification=easy",
+            "task is read-only or review-only"
+          ]
+        },
+        "reason": "L1 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+        "reasons": [
+          "L1 default routing tier",
+          "low-risk minimum tier",
+          "low context requirement",
+          "easy verification strength"
+        ],
+        "escalation_triggers": [
+          "invalid_patch",
+          "failed_checks"
+        ]
+      },
+      {
+        "task_id": "T-003",
+        "model_tier": "standard",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4",
+          "tier": "standard",
+          "cost_hint": {
+            "label": "medium",
+            "estimated_usd_per_call": 0.05
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "patch",
+            "test",
+            "summarize"
+          ],
+          "strengths": [
+            "local code changes",
+            "tests",
+            "bounded refactors"
+          ],
+          "blocked_task_types": [
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L2",
+          "risk": "medium",
+          "context_need": "medium",
+          "contextNeed": "medium",
+          "verification": "medium",
+          "edits_files": true,
+          "editsFiles": true,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L2",
+            "risk=medium",
+            "context_need=medium",
+            "verification=medium",
+            "task edits files"
+          ]
+        },
+        "reason": "L2 default routing tier; medium-risk minimum tier; medium context requirement; medium verification strength; file-editing tasks require at least the standard tier",
+        "reasons": [
+          "L2 default routing tier",
+          "medium-risk minimum tier",
+          "medium context requirement",
+          "medium verification strength",
+          "file-editing tasks require at least the standard tier"
+        ],
+        "escalation_triggers": [
+          "failed_tests",
+          "uncertain_diff"
+        ]
+      },
+      {
+        "task_id": "T-004",
+        "model_tier": "standard",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4",
+          "tier": "standard",
+          "cost_hint": {
+            "label": "medium",
+            "estimated_usd_per_call": 0.05
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "patch",
+            "test",
+            "summarize"
+          ],
+          "strengths": [
+            "local code changes",
+            "tests",
+            "bounded refactors"
+          ],
+          "blocked_task_types": [
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L1",
+          "risk": "low",
+          "context_need": "medium",
+          "contextNeed": "medium",
+          "verification": "easy",
+          "edits_files": true,
+          "editsFiles": true,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L1",
+            "risk=low",
+            "context_need=medium",
+            "verification=easy",
+            "task edits files"
+          ]
+        },
+        "reason": "L1 default routing tier; low-risk minimum tier; medium context requirement; easy verification strength; file-editing tasks require at least the standard tier",
+        "reasons": [
+          "L1 default routing tier",
+          "low-risk minimum tier",
+          "medium context requirement",
+          "easy verification strength",
+          "file-editing tasks require at least the standard tier"
+        ],
+        "escalation_triggers": [
+          "invalid_patch",
+          "failed_checks"
+        ]
+      },
+      {
+        "task_id": "T-005",
+        "model_tier": "cheap",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4-mini",
+          "tier": "cheap",
+          "cost_hint": {
+            "label": "low",
+            "estimated_usd_per_call": 0.01
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "summarize",
+            "extract"
+          ],
+          "strengths": [
+            "read-only analysis",
+            "summaries",
+            "simple generation"
+          ],
+          "blocked_task_types": [
+            "file_edit",
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L1",
+          "risk": "low",
+          "context_need": "low",
+          "contextNeed": "low",
+          "verification": "easy",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L1",
+            "risk=low",
+            "context_need=low",
+            "verification=easy",
+            "task is read-only or review-only"
+          ]
+        },
+        "reason": "L1 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+        "reasons": [
+          "L1 default routing tier",
+          "low-risk minimum tier",
+          "low context requirement",
+          "easy verification strength"
+        ],
+        "escalation_triggers": [
+          "invalid_patch",
+          "failed_checks"
+        ]
+      },
+      {
+        "task_id": "T-006",
+        "model_tier": "premium",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.5",
+          "tier": "premium",
+          "cost_hint": {
+            "label": "high",
+            "estimated_usd_per_call": 0.2
+          },
+          "context_window": 256000,
+          "tool_support": [
+            "read",
+            "patch",
+            "test",
+            "review",
+            "plan"
+          ],
+          "strengths": [
+            "architecture",
+            "security review",
+            "cross-module changes",
+            "final verification"
+          ],
+          "blocked_task_types": []
+        },
+        "classification": {
+          "difficulty": "L4",
+          "risk": "high",
+          "context_need": "high",
+          "contextNeed": "high",
+          "verification": "hard",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.8200000000000001,
+          "reasoning": [
+            "difficulty=L4",
+            "risk=high",
+            "context_need=high",
+            "verification=hard",
+            "task is read-only or review-only"
+          ]
+        },
+        "reason": "L4 default routing tier; high-risk minimum tier; high context requirement; hard verification strength; final verification always uses the premium tier",
+        "reasons": [
+          "L4 default routing tier",
+          "high-risk minimum tier",
+          "high context requirement",
+          "hard verification strength",
+          "final verification always uses the premium tier"
+        ],
+        "escalation_triggers": [
+          "human_approval",
+          "final_review"
+        ]
+      }
+    ],
+    "routing_trace": [
+      {
+        "task_id": "T-001",
+        "model_tier": "cheap",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4-mini",
+          "tier": "cheap",
+          "cost_hint": {
+            "label": "low",
+            "estimated_usd_per_call": 0.01
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "summarize",
+            "extract"
+          ],
+          "strengths": [
+            "read-only analysis",
+            "summaries",
+            "simple generation"
+          ],
+          "blocked_task_types": [
+            "file_edit",
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L0",
+          "risk": "low",
+          "context_need": "low",
+          "contextNeed": "low",
+          "verification": "easy",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L0",
+            "risk=low",
+            "context_need=low",
+            "verification=easy",
+            "task is read-only or review-only"
+          ]
+        },
+        "reason": "L0 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+        "reasons": [
+          "L0 default routing tier",
+          "low-risk minimum tier",
+          "low context requirement",
+          "easy verification strength"
+        ],
+        "escalation_triggers": [
+          "missing_result",
+          "conflicting_result"
+        ]
+      },
+      {
+        "task_id": "T-002",
+        "model_tier": "cheap",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4-mini",
+          "tier": "cheap",
+          "cost_hint": {
+            "label": "low",
+            "estimated_usd_per_call": 0.01
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "summarize",
+            "extract"
+          ],
+          "strengths": [
+            "read-only analysis",
+            "summaries",
+            "simple generation"
+          ],
+          "blocked_task_types": [
+            "file_edit",
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L1",
+          "risk": "low",
+          "context_need": "low",
+          "contextNeed": "low",
+          "verification": "easy",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L1",
+            "risk=low",
+            "context_need=low",
+            "verification=easy",
+            "task is read-only or review-only"
+          ]
+        },
+        "reason": "L1 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+        "reasons": [
+          "L1 default routing tier",
+          "low-risk minimum tier",
+          "low context requirement",
+          "easy verification strength"
+        ],
+        "escalation_triggers": [
+          "invalid_patch",
+          "failed_checks"
+        ]
+      },
+      {
+        "task_id": "T-003",
+        "model_tier": "standard",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4",
+          "tier": "standard",
+          "cost_hint": {
+            "label": "medium",
+            "estimated_usd_per_call": 0.05
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "patch",
+            "test",
+            "summarize"
+          ],
+          "strengths": [
+            "local code changes",
+            "tests",
+            "bounded refactors"
+          ],
+          "blocked_task_types": [
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L2",
+          "risk": "medium",
+          "context_need": "medium",
+          "contextNeed": "medium",
+          "verification": "medium",
+          "edits_files": true,
+          "editsFiles": true,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L2",
+            "risk=medium",
+            "context_need=medium",
+            "verification=medium",
+            "task edits files"
+          ]
+        },
+        "reason": "L2 default routing tier; medium-risk minimum tier; medium context requirement; medium verification strength; file-editing tasks require at least the standard tier",
+        "reasons": [
+          "L2 default routing tier",
+          "medium-risk minimum tier",
+          "medium context requirement",
+          "medium verification strength",
+          "file-editing tasks require at least the standard tier"
+        ],
+        "escalation_triggers": [
+          "failed_tests",
+          "uncertain_diff"
+        ]
+      },
+      {
+        "task_id": "T-004",
+        "model_tier": "standard",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4",
+          "tier": "standard",
+          "cost_hint": {
+            "label": "medium",
+            "estimated_usd_per_call": 0.05
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "patch",
+            "test",
+            "summarize"
+          ],
+          "strengths": [
+            "local code changes",
+            "tests",
+            "bounded refactors"
+          ],
+          "blocked_task_types": [
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L1",
+          "risk": "low",
+          "context_need": "medium",
+          "contextNeed": "medium",
+          "verification": "easy",
+          "edits_files": true,
+          "editsFiles": true,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L1",
+            "risk=low",
+            "context_need=medium",
+            "verification=easy",
+            "task edits files"
+          ]
+        },
+        "reason": "L1 default routing tier; low-risk minimum tier; medium context requirement; easy verification strength; file-editing tasks require at least the standard tier",
+        "reasons": [
+          "L1 default routing tier",
+          "low-risk minimum tier",
+          "medium context requirement",
+          "easy verification strength",
+          "file-editing tasks require at least the standard tier"
+        ],
+        "escalation_triggers": [
+          "invalid_patch",
+          "failed_checks"
+        ]
+      },
+      {
+        "task_id": "T-005",
+        "model_tier": "cheap",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.4-mini",
+          "tier": "cheap",
+          "cost_hint": {
+            "label": "low",
+            "estimated_usd_per_call": 0.01
+          },
+          "context_window": 128000,
+          "tool_support": [
+            "read",
+            "summarize",
+            "extract"
+          ],
+          "strengths": [
+            "read-only analysis",
+            "summaries",
+            "simple generation"
+          ],
+          "blocked_task_types": [
+            "file_edit",
+            "security",
+            "migration",
+            "final_verification"
+          ]
+        },
+        "classification": {
+          "difficulty": "L1",
+          "risk": "low",
+          "context_need": "low",
+          "contextNeed": "low",
+          "verification": "easy",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L1",
+            "risk=low",
+            "context_need=low",
+            "verification=easy",
+            "task is read-only or review-only"
+          ]
+        },
+        "reason": "L1 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+        "reasons": [
+          "L1 default routing tier",
+          "low-risk minimum tier",
+          "low context requirement",
+          "easy verification strength"
+        ],
+        "escalation_triggers": [
+          "invalid_patch",
+          "failed_checks"
+        ]
+      },
+      {
+        "task_id": "T-006",
+        "model_tier": "premium",
+        "selected_model": {
+          "provider": "openai-compatible",
+          "model": "gpt-5.5",
+          "tier": "premium",
+          "cost_hint": {
+            "label": "high",
+            "estimated_usd_per_call": 0.2
+          },
+          "context_window": 256000,
+          "tool_support": [
+            "read",
+            "patch",
+            "test",
+            "review",
+            "plan"
+          ],
+          "strengths": [
+            "architecture",
+            "security review",
+            "cross-module changes",
+            "final verification"
+          ],
+          "blocked_task_types": []
+        },
+        "classification": {
+          "difficulty": "L4",
+          "risk": "high",
+          "context_need": "high",
+          "contextNeed": "high",
+          "verification": "hard",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.8200000000000001,
+          "reasoning": [
+            "difficulty=L4",
+            "risk=high",
+            "context_need=high",
+            "verification=hard",
+            "task is read-only or review-only"
+          ]
+        },
+        "reason": "L4 default routing tier; high-risk minimum tier; high context requirement; hard verification strength; final verification always uses the premium tier",
+        "reasons": [
+          "L4 default routing tier",
+          "high-risk minimum tier",
+          "high context requirement",
+          "hard verification strength",
+          "final verification always uses the premium tier"
+        ],
+        "escalation_triggers": [
+          "human_approval",
+          "final_review"
+        ]
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T-001",
+        "title": "读取项目结构与需求上下文",
+        "goal": "Understand the workspace and clarify the requested outcome: 修改 src/runtime/inspection.js 并补 tests/inspection.test.js",
+        "difficulty": "L0",
+        "risk": "low",
+        "contextNeed": "low",
+        "verification": "easy",
+        "dependsOn": [],
+        "allowedFiles": [],
+        "forbiddenActions": [
+          "modify files",
+          "call external model providers"
+        ],
+        "acceptance": [
+          "workspace structure is summarized",
+          "request is preserved in the run trace",
+          "workspace summary records 125 file(s)"
+        ],
+        "expectedOutput": [
+          "workspace summary",
+          "planning notes"
+        ],
+        "task_id": "T-001",
+        "modelTier": "cheap",
+        "model_tier": "cheap",
+        "routingReason": [
+          "L0 default routing tier",
+          "low-risk minimum tier",
+          "low context requirement",
+          "easy verification strength"
+        ],
+        "classification": {
+          "difficulty": "L0",
+          "risk": "low",
+          "context_need": "low",
+          "contextNeed": "low",
+          "verification": "easy",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L0",
+            "risk=low",
+            "context_need=low",
+            "verification=easy",
+            "task is read-only or review-only"
+          ]
+        },
+        "routing": {
+          "task_id": "T-001",
+          "model_tier": "cheap",
+          "selected_model": {
+            "provider": "openai-compatible",
+            "model": "gpt-5.4-mini",
+            "tier": "cheap",
+            "cost_hint": {
+              "label": "low",
+              "estimated_usd_per_call": 0.01
+            },
+            "context_window": 128000,
+            "tool_support": [
+              "read",
+              "summarize",
+              "extract"
+            ],
+            "strengths": [
+              "read-only analysis",
+              "summaries",
+              "simple generation"
+            ],
+            "blocked_task_types": [
+              "file_edit",
+              "security",
+              "migration",
+              "final_verification"
+            ]
+          },
+          "classification": {
+            "difficulty": "L0",
+            "risk": "low",
+            "context_need": "low",
+            "contextNeed": "low",
+            "verification": "easy",
+            "edits_files": false,
+            "editsFiles": false,
+            "confidence": 0.9,
+            "reasoning": [
+              "difficulty=L0",
+              "risk=low",
+              "context_need=low",
+              "verification=easy",
+              "task is read-only or review-only"
+            ]
+          },
+          "reason": "L0 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+          "reasons": [
+            "L0 default routing tier",
+            "low-risk minimum tier",
+            "low context requirement",
+            "easy verification strength"
+          ],
+          "escalation_triggers": [
+            "missing_result",
+            "conflicting_result"
+          ]
+        },
+        "depends_on": [],
+        "allowed_files": [],
+        "referencedFiles": [],
+        "referenced_files": [],
+        "forbidden_actions": [
+          "modify files",
+          "call external model providers"
+        ],
+        "expected_output": [
+          "workspace summary",
+          "planning notes"
+        ],
+        "context_need": "low",
+        "finalVerification": false,
+        "final_verification": false
+      },
+      {
+        "id": "T-002",
+        "title": "生成任务合同与执行约束",
+        "goal": "Turn the request into explicit worker-safe task contracts.",
+        "difficulty": "L1",
+        "risk": "low",
+        "contextNeed": "low",
+        "verification": "easy",
+        "dependsOn": [
+          "T-001"
+        ],
+        "allowedFiles": [],
+        "forbiddenActions": [
+          "modify files outside an approved task contract"
+        ],
+        "acceptance": [
+          "each executable task has acceptance criteria",
+          "each executable task has forbidden actions"
+        ],
+        "expectedOutput": [
+          "task contracts",
+          "dependency list"
+        ],
+        "task_id": "T-002",
+        "modelTier": "cheap",
+        "model_tier": "cheap",
+        "routingReason": [
+          "L1 default routing tier",
+          "low-risk minimum tier",
+          "low context requirement",
+          "easy verification strength"
+        ],
+        "classification": {
+          "difficulty": "L1",
+          "risk": "low",
+          "context_need": "low",
+          "contextNeed": "low",
+          "verification": "easy",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L1",
+            "risk=low",
+            "context_need=low",
+            "verification=easy",
+            "task is read-only or review-only"
+          ]
+        },
+        "routing": {
+          "task_id": "T-002",
+          "model_tier": "cheap",
+          "selected_model": {
+            "provider": "openai-compatible",
+            "model": "gpt-5.4-mini",
+            "tier": "cheap",
+            "cost_hint": {
+              "label": "low",
+              "estimated_usd_per_call": 0.01
+            },
+            "context_window": 128000,
+            "tool_support": [
+              "read",
+              "summarize",
+              "extract"
+            ],
+            "strengths": [
+              "read-only analysis",
+              "summaries",
+              "simple generation"
+            ],
+            "blocked_task_types": [
+              "file_edit",
+              "security",
+              "migration",
+              "final_verification"
+            ]
+          },
+          "classification": {
+            "difficulty": "L1",
+            "risk": "low",
+            "context_need": "low",
+            "contextNeed": "low",
+            "verification": "easy",
+            "edits_files": false,
+            "editsFiles": false,
+            "confidence": 0.9,
+            "reasoning": [
+              "difficulty=L1",
+              "risk=low",
+              "context_need=low",
+              "verification=easy",
+              "task is read-only or review-only"
+            ]
+          },
+          "reason": "L1 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+          "reasons": [
+            "L1 default routing tier",
+            "low-risk minimum tier",
+            "low context requirement",
+            "easy verification strength"
+          ],
+          "escalation_triggers": [
+            "invalid_patch",
+            "failed_checks"
+          ]
+        },
+        "depends_on": [
+          "T-001"
+        ],
+        "allowed_files": [],
+        "referencedFiles": [],
+        "referenced_files": [],
+        "forbidden_actions": [
+          "modify files outside an approved task contract"
+        ],
+        "expected_output": [
+          "task contracts",
+          "dependency list"
+        ],
+        "context_need": "low",
+        "finalVerification": false,
+        "final_verification": false
+      },
+      {
+        "id": "T-003",
+        "title": "实现核心代码变更",
+        "goal": "Apply the requested implementation inside the approved workspace scope.",
+        "difficulty": "L2",
+        "risk": "medium",
+        "contextNeed": "medium",
+        "verification": "medium",
+        "dependsOn": [
+          "T-002"
+        ],
+        "allowedFiles": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "referencedFiles": [],
+        "contextSelectors": {},
+        "forbiddenActions": [
+          "edit files outside the approved allowlist",
+          "perform destructive filesystem operations"
+        ],
+        "acceptance": [
+          "implementation matches the approved task contract",
+          "changed files remain inside the allowlist",
+          "planner narrows execution scope to explicitly mentioned workspace files"
+        ],
+        "expectedOutput": [
+          "patch",
+          "implementation notes",
+          "files touched"
+        ],
+        "task_id": "T-003",
+        "modelTier": "standard",
+        "model_tier": "standard",
+        "routingReason": [
+          "L2 default routing tier",
+          "medium-risk minimum tier",
+          "medium context requirement",
+          "medium verification strength",
+          "file-editing tasks require at least the standard tier"
+        ],
+        "classification": {
+          "difficulty": "L2",
+          "risk": "medium",
+          "context_need": "medium",
+          "contextNeed": "medium",
+          "verification": "medium",
+          "edits_files": true,
+          "editsFiles": true,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L2",
+            "risk=medium",
+            "context_need=medium",
+            "verification=medium",
+            "task edits files"
+          ]
+        },
+        "routing": {
+          "task_id": "T-003",
+          "model_tier": "standard",
+          "selected_model": {
+            "provider": "openai-compatible",
+            "model": "gpt-5.4",
+            "tier": "standard",
+            "cost_hint": {
+              "label": "medium",
+              "estimated_usd_per_call": 0.05
+            },
+            "context_window": 128000,
+            "tool_support": [
+              "read",
+              "patch",
+              "test",
+              "summarize"
+            ],
+            "strengths": [
+              "local code changes",
+              "tests",
+              "bounded refactors"
+            ],
+            "blocked_task_types": [
+              "security",
+              "migration",
+              "final_verification"
+            ]
+          },
+          "classification": {
+            "difficulty": "L2",
+            "risk": "medium",
+            "context_need": "medium",
+            "contextNeed": "medium",
+            "verification": "medium",
+            "edits_files": true,
+            "editsFiles": true,
+            "confidence": 0.9,
+            "reasoning": [
+              "difficulty=L2",
+              "risk=medium",
+              "context_need=medium",
+              "verification=medium",
+              "task edits files"
+            ]
+          },
+          "reason": "L2 default routing tier; medium-risk minimum tier; medium context requirement; medium verification strength; file-editing tasks require at least the standard tier",
+          "reasons": [
+            "L2 default routing tier",
+            "medium-risk minimum tier",
+            "medium context requirement",
+            "medium verification strength",
+            "file-editing tasks require at least the standard tier"
+          ],
+          "escalation_triggers": [
+            "failed_tests",
+            "uncertain_diff"
+          ]
+        },
+        "depends_on": [
+          "T-002"
+        ],
+        "allowed_files": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "referenced_files": [],
+        "forbidden_actions": [
+          "edit files outside the approved allowlist",
+          "perform destructive filesystem operations"
+        ],
+        "expected_output": [
+          "patch",
+          "implementation notes",
+          "files touched"
+        ],
+        "context_need": "medium",
+        "finalVerification": false,
+        "final_verification": false
+      },
+      {
+        "id": "T-004",
+        "title": "补充测试与验证命令",
+        "goal": "Add or identify verification that proves the requested behavior.",
+        "difficulty": "L1",
+        "risk": "low",
+        "contextNeed": "medium",
+        "verification": "easy",
+        "dependsOn": [
+          "T-003"
+        ],
+        "allowedFiles": [
+          "tests/inspection.test.js"
+        ],
+        "referencedFiles": [],
+        "contextSelectors": {},
+        "forbiddenActions": [
+          "weaken existing assertions",
+          "remove existing tests"
+        ],
+        "acceptance": [
+          "verification command is recorded",
+          "new behavior has test coverage when code changes are made",
+          "planner narrows execution scope to explicitly mentioned workspace files"
+        ],
+        "expectedOutput": [
+          "test patch",
+          "verification command"
+        ],
+        "task_id": "T-004",
+        "modelTier": "standard",
+        "model_tier": "standard",
+        "routingReason": [
+          "L1 default routing tier",
+          "low-risk minimum tier",
+          "medium context requirement",
+          "easy verification strength",
+          "file-editing tasks require at least the standard tier"
+        ],
+        "classification": {
+          "difficulty": "L1",
+          "risk": "low",
+          "context_need": "medium",
+          "contextNeed": "medium",
+          "verification": "easy",
+          "edits_files": true,
+          "editsFiles": true,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L1",
+            "risk=low",
+            "context_need=medium",
+            "verification=easy",
+            "task edits files"
+          ]
+        },
+        "routing": {
+          "task_id": "T-004",
+          "model_tier": "standard",
+          "selected_model": {
+            "provider": "openai-compatible",
+            "model": "gpt-5.4",
+            "tier": "standard",
+            "cost_hint": {
+              "label": "medium",
+              "estimated_usd_per_call": 0.05
+            },
+            "context_window": 128000,
+            "tool_support": [
+              "read",
+              "patch",
+              "test",
+              "summarize"
+            ],
+            "strengths": [
+              "local code changes",
+              "tests",
+              "bounded refactors"
+            ],
+            "blocked_task_types": [
+              "security",
+              "migration",
+              "final_verification"
+            ]
+          },
+          "classification": {
+            "difficulty": "L1",
+            "risk": "low",
+            "context_need": "medium",
+            "contextNeed": "medium",
+            "verification": "easy",
+            "edits_files": true,
+            "editsFiles": true,
+            "confidence": 0.9,
+            "reasoning": [
+              "difficulty=L1",
+              "risk=low",
+              "context_need=medium",
+              "verification=easy",
+              "task edits files"
+            ]
+          },
+          "reason": "L1 default routing tier; low-risk minimum tier; medium context requirement; easy verification strength; file-editing tasks require at least the standard tier",
+          "reasons": [
+            "L1 default routing tier",
+            "low-risk minimum tier",
+            "medium context requirement",
+            "easy verification strength",
+            "file-editing tasks require at least the standard tier"
+          ],
+          "escalation_triggers": [
+            "invalid_patch",
+            "failed_checks"
+          ]
+        },
+        "depends_on": [
+          "T-003"
+        ],
+        "allowed_files": [
+          "tests/inspection.test.js"
+        ],
+        "referenced_files": [],
+        "forbidden_actions": [
+          "weaken existing assertions",
+          "remove existing tests"
+        ],
+        "expected_output": [
+          "test patch",
+          "verification command"
+        ],
+        "context_need": "medium",
+        "finalVerification": false,
+        "final_verification": false
+      },
+      {
+        "id": "T-005",
+        "title": "运行验证并收集证据",
+        "goal": "Run configured checks and capture the evidence needed for final review.",
+        "difficulty": "L1",
+        "risk": "low",
+        "contextNeed": "low",
+        "verification": "easy",
+        "dependsOn": [
+          "T-004"
+        ],
+        "allowedFiles": [],
+        "forbiddenActions": [
+          "claim success without command output"
+        ],
+        "acceptance": [
+          "verification results include command, exit code, and output summary",
+          "failed verification blocks final success"
+        ],
+        "expectedOutput": [
+          "verification evidence",
+          "failure summary if any"
+        ],
+        "task_id": "T-005",
+        "modelTier": "cheap",
+        "model_tier": "cheap",
+        "routingReason": [
+          "L1 default routing tier",
+          "low-risk minimum tier",
+          "low context requirement",
+          "easy verification strength"
+        ],
+        "classification": {
+          "difficulty": "L1",
+          "risk": "low",
+          "context_need": "low",
+          "contextNeed": "low",
+          "verification": "easy",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.9,
+          "reasoning": [
+            "difficulty=L1",
+            "risk=low",
+            "context_need=low",
+            "verification=easy",
+            "task is read-only or review-only"
+          ]
+        },
+        "routing": {
+          "task_id": "T-005",
+          "model_tier": "cheap",
+          "selected_model": {
+            "provider": "openai-compatible",
+            "model": "gpt-5.4-mini",
+            "tier": "cheap",
+            "cost_hint": {
+              "label": "low",
+              "estimated_usd_per_call": 0.01
+            },
+            "context_window": 128000,
+            "tool_support": [
+              "read",
+              "summarize",
+              "extract"
+            ],
+            "strengths": [
+              "read-only analysis",
+              "summaries",
+              "simple generation"
+            ],
+            "blocked_task_types": [
+              "file_edit",
+              "security",
+              "migration",
+              "final_verification"
+            ]
+          },
+          "classification": {
+            "difficulty": "L1",
+            "risk": "low",
+            "context_need": "low",
+            "contextNeed": "low",
+            "verification": "easy",
+            "edits_files": false,
+            "editsFiles": false,
+            "confidence": 0.9,
+            "reasoning": [
+              "difficulty=L1",
+              "risk=low",
+              "context_need=low",
+              "verification=easy",
+              "task is read-only or review-only"
+            ]
+          },
+          "reason": "L1 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+          "reasons": [
+            "L1 default routing tier",
+            "low-risk minimum tier",
+            "low context requirement",
+            "easy verification strength"
+          ],
+          "escalation_triggers": [
+            "invalid_patch",
+            "failed_checks"
+          ]
+        },
+        "depends_on": [
+          "T-004"
+        ],
+        "allowed_files": [],
+        "referencedFiles": [],
+        "referenced_files": [],
+        "forbidden_actions": [
+          "claim success without command output"
+        ],
+        "expected_output": [
+          "verification evidence",
+          "failure summary if any"
+        ],
+        "context_need": "low",
+        "finalVerification": false,
+        "final_verification": false
+      },
+      {
+        "id": "T-006",
+        "title": "最终审查与交付报告",
+        "goal": "Review the full run, explain routing decisions, and prepare the final report.",
+        "difficulty": "L4",
+        "risk": "high",
+        "contextNeed": "high",
+        "verification": "hard",
+        "finalVerification": true,
+        "dependsOn": [
+          "T-005"
+        ],
+        "allowedFiles": [],
+        "forbiddenActions": [
+          "skip final verification",
+          "hide failed checks"
+        ],
+        "acceptance": [
+          "final report includes task graph, routing, and verification evidence",
+          "premium-tier final review is recorded"
+        ],
+        "expectedOutput": [
+          "final report",
+          "risk notes",
+          "follow-up recommendations"
+        ],
+        "task_id": "T-006",
+        "modelTier": "premium",
+        "model_tier": "premium",
+        "routingReason": [
+          "L4 default routing tier",
+          "high-risk minimum tier",
+          "high context requirement",
+          "hard verification strength",
+          "final verification always uses the premium tier"
+        ],
+        "classification": {
+          "difficulty": "L4",
+          "risk": "high",
+          "context_need": "high",
+          "contextNeed": "high",
+          "verification": "hard",
+          "edits_files": false,
+          "editsFiles": false,
+          "confidence": 0.8200000000000001,
+          "reasoning": [
+            "difficulty=L4",
+            "risk=high",
+            "context_need=high",
+            "verification=hard",
+            "task is read-only or review-only"
+          ]
+        },
+        "routing": {
+          "task_id": "T-006",
+          "model_tier": "premium",
+          "selected_model": {
+            "provider": "openai-compatible",
+            "model": "gpt-5.5",
+            "tier": "premium",
+            "cost_hint": {
+              "label": "high",
+              "estimated_usd_per_call": 0.2
+            },
+            "context_window": 256000,
+            "tool_support": [
+              "read",
+              "patch",
+              "test",
+              "review",
+              "plan"
+            ],
+            "strengths": [
+              "architecture",
+              "security review",
+              "cross-module changes",
+              "final verification"
+            ],
+            "blocked_task_types": []
+          },
+          "classification": {
+            "difficulty": "L4",
+            "risk": "high",
+            "context_need": "high",
+            "contextNeed": "high",
+            "verification": "hard",
+            "edits_files": false,
+            "editsFiles": false,
+            "confidence": 0.8200000000000001,
+            "reasoning": [
+              "difficulty=L4",
+              "risk=high",
+              "context_need=high",
+              "verification=hard",
+              "task is read-only or review-only"
+            ]
+          },
+          "reason": "L4 default routing tier; high-risk minimum tier; high context requirement; hard verification strength; final verification always uses the premium tier",
+          "reasons": [
+            "L4 default routing tier",
+            "high-risk minimum tier",
+            "high context requirement",
+            "hard verification strength",
+            "final verification always uses the premium tier"
+          ],
+          "escalation_triggers": [
+            "human_approval",
+            "final_review"
+          ]
+        },
+        "depends_on": [
+          "T-005"
+        ],
+        "allowed_files": [],
+        "referencedFiles": [],
+        "referenced_files": [],
+        "forbidden_actions": [
+          "skip final verification",
+          "hide failed checks"
+        ],
+        "expected_output": [
+          "final report",
+          "risk notes",
+          "follow-up recommendations"
+        ],
+        "context_need": "high",
+        "final_verification": true
+      }
+    ],
+    "dependencies": [
+      {
+        "from": "T-001",
+        "to": "T-002"
+      },
+      {
+        "from": "T-002",
+        "to": "T-003"
+      },
+      {
+        "from": "T-003",
+        "to": "T-004"
+      },
+      {
+        "from": "T-004",
+        "to": "T-005"
+      },
+      {
+        "from": "T-005",
+        "to": "T-006"
+      }
+    ],
+    "approvalRequired": true,
+    "approval_required": true,
+    "approval": {
+      "required": true,
+      "status": "approved",
+      "reasons": [
+        {
+          "task_id": "T-003",
+          "title": "实现核心代码变更",
+          "risk": "medium",
+          "reason": "medium-risk task requires human approval before execution"
+        },
+        {
+          "task_id": "T-006",
+          "title": "最终审查与交付报告",
+          "risk": "high",
+          "reason": "high-risk task requires human approval before execution"
+        }
+      ],
+      "approvedBy": "demo-user",
+      "approved_by": "demo-user",
+      "approvedAt": "2026-06-25T03:20:00.000Z",
+      "approved_at": "2026-06-25T03:20:00.000Z"
+    },
+    "planningPrompt": "You are the AI Coding Runtime planner.\nConvert the user request into a dependency-aware task graph and worker-safe Task Contract entries.\n\nEach Task Contract must include: task_id, title, goal, difficulty, risk, context_need, verification, model_tier, final_verification, depends_on, allowed_files, forbidden_actions, acceptance, and expected_output.\nReject or revise any task that has no acceptance criteria.\nMark medium and high risk plans as requiring human approval before execution.\n\nWorkspace summary:\n- total_files: 125\n- matched_request_files: src/runtime/inspection.js, tests/inspection.test.js\n- project_signals: node-package, src-directory, tests-directory, docs-directory, runtime-config\n\nUser request:\n修改 src/runtime/inspection.js 并补 tests/inspection.test.js",
+    "planning_prompt": "You are the AI Coding Runtime planner.\nConvert the user request into a dependency-aware task graph and worker-safe Task Contract entries.\n\nEach Task Contract must include: task_id, title, goal, difficulty, risk, context_need, verification, model_tier, final_verification, depends_on, allowed_files, forbidden_actions, acceptance, and expected_output.\nReject or revise any task that has no acceptance criteria.\nMark medium and high risk plans as requiring human approval before execution.\n\nWorkspace summary:\n- total_files: 125\n- matched_request_files: src/runtime/inspection.js, tests/inspection.test.js\n- project_signals: node-package, src-directory, tests-directory, docs-directory, runtime-config\n\nUser request:\n修改 src/runtime/inspection.js 并补 tests/inspection.test.js",
+    "estimatedCost": {
+      "currency": "USD",
+      "minimum": 0,
+      "maximum": 0.33,
+      "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+    },
+    "estimated_cost": {
+      "currency": "USD",
+      "minimum": 0,
+      "maximum": 0.33,
+      "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+    },
+    "riskSummary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)",
+    "risk_summary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)",
+    "status": "planned",
+    "taskGraph": {
+      "run_id": "run_20260625031928444_ewjngc",
+      "tasks": [
+        {
+          "task_id": "T-001",
+          "title": "读取项目结构与需求上下文",
+          "difficulty": "L0",
+          "risk": "low",
+          "model_tier": "cheap",
+          "final_verification": false,
+          "depends_on": []
+        },
+        {
+          "task_id": "T-002",
+          "title": "生成任务合同与执行约束",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "cheap",
+          "final_verification": false,
+          "depends_on": [
+            "T-001"
+          ]
+        },
+        {
+          "task_id": "T-003",
+          "title": "实现核心代码变更",
+          "difficulty": "L2",
+          "risk": "medium",
+          "model_tier": "standard",
+          "final_verification": false,
+          "depends_on": [
+            "T-002"
+          ]
+        },
+        {
+          "task_id": "T-004",
+          "title": "补充测试与验证命令",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "standard",
+          "final_verification": false,
+          "depends_on": [
+            "T-003"
+          ]
+        },
+        {
+          "task_id": "T-005",
+          "title": "运行验证并收集证据",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "cheap",
+          "final_verification": false,
+          "depends_on": [
+            "T-004"
+          ]
+        },
+        {
+          "task_id": "T-006",
+          "title": "最终审查与交付报告",
+          "difficulty": "L4",
+          "risk": "high",
+          "model_tier": "premium",
+          "final_verification": true,
+          "depends_on": [
+            "T-005"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "T-001",
+          "to": "T-002"
+        },
+        {
+          "from": "T-002",
+          "to": "T-003"
+        },
+        {
+          "from": "T-003",
+          "to": "T-004"
+        },
+        {
+          "from": "T-004",
+          "to": "T-005"
+        },
+        {
+          "from": "T-005",
+          "to": "T-006"
+        }
+      ],
+      "approval_required": true,
+      "estimated_cost": {
+        "currency": "USD",
+        "minimum": 0,
+        "maximum": 0.33,
+        "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+      },
+      "risk_summary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)"
+    },
+    "task_graph": {
+      "run_id": "run_20260625031928444_ewjngc",
+      "tasks": [
+        {
+          "task_id": "T-001",
+          "title": "读取项目结构与需求上下文",
+          "difficulty": "L0",
+          "risk": "low",
+          "model_tier": "cheap",
+          "final_verification": false,
+          "depends_on": []
+        },
+        {
+          "task_id": "T-002",
+          "title": "生成任务合同与执行约束",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "cheap",
+          "final_verification": false,
+          "depends_on": [
+            "T-001"
+          ]
+        },
+        {
+          "task_id": "T-003",
+          "title": "实现核心代码变更",
+          "difficulty": "L2",
+          "risk": "medium",
+          "model_tier": "standard",
+          "final_verification": false,
+          "depends_on": [
+            "T-002"
+          ]
+        },
+        {
+          "task_id": "T-004",
+          "title": "补充测试与验证命令",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "standard",
+          "final_verification": false,
+          "depends_on": [
+            "T-003"
+          ]
+        },
+        {
+          "task_id": "T-005",
+          "title": "运行验证并收集证据",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "cheap",
+          "final_verification": false,
+          "depends_on": [
+            "T-004"
+          ]
+        },
+        {
+          "task_id": "T-006",
+          "title": "最终审查与交付报告",
+          "difficulty": "L4",
+          "risk": "high",
+          "model_tier": "premium",
+          "final_verification": true,
+          "depends_on": [
+            "T-005"
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "from": "T-001",
+          "to": "T-002"
+        },
+        {
+          "from": "T-002",
+          "to": "T-003"
+        },
+        {
+          "from": "T-003",
+          "to": "T-004"
+        },
+        {
+          "from": "T-004",
+          "to": "T-005"
+        },
+        {
+          "from": "T-005",
+          "to": "T-006"
+        }
+      ],
+      "approval_required": true,
+      "estimated_cost": {
+        "currency": "USD",
+        "minimum": 0,
+        "maximum": 0.33,
+        "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+      },
+      "risk_summary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)"
+    },
+    "validation": {
+      "valid": true,
+      "errors": []
+    },
+    "planReport": {
+      "summary": "Plan contains 6 task(s), 5 dependency edge(s), and requires human approval.",
+      "approval": {
+        "required": true,
+        "status": "required",
+        "reasons": [
+          {
+            "task_id": "T-003",
+            "title": "实现核心代码变更",
+            "risk": "medium",
+            "reason": "medium-risk task requires human approval before execution"
+          },
+          {
+            "task_id": "T-006",
+            "title": "最终审查与交付报告",
+            "risk": "high",
+            "reason": "high-risk task requires human approval before execution"
+          }
+        ]
+      },
+      "validation": {
+        "valid": true,
+        "errorCount": 0,
+        "errors": []
+      },
+      "taskGraph": {
+        "run_id": "run_20260625031928444_ewjngc",
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "读取项目结构与需求上下文",
+            "difficulty": "L0",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": []
+          },
+          {
+            "task_id": "T-002",
+            "title": "生成任务合同与执行约束",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": [
+              "T-001"
+            ]
+          },
+          {
+            "task_id": "T-003",
+            "title": "实现核心代码变更",
+            "difficulty": "L2",
+            "risk": "medium",
+            "model_tier": "standard",
+            "final_verification": false,
+            "depends_on": [
+              "T-002"
+            ]
+          },
+          {
+            "task_id": "T-004",
+            "title": "补充测试与验证命令",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "standard",
+            "final_verification": false,
+            "depends_on": [
+              "T-003"
+            ]
+          },
+          {
+            "task_id": "T-005",
+            "title": "运行验证并收集证据",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": [
+              "T-004"
+            ]
+          },
+          {
+            "task_id": "T-006",
+            "title": "最终审查与交付报告",
+            "difficulty": "L4",
+            "risk": "high",
+            "model_tier": "premium",
+            "final_verification": true,
+            "depends_on": [
+              "T-005"
+            ]
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "T-001",
+            "to": "T-002"
+          },
+          {
+            "from": "T-002",
+            "to": "T-003"
+          },
+          {
+            "from": "T-003",
+            "to": "T-004"
+          },
+          {
+            "from": "T-004",
+            "to": "T-005"
+          },
+          {
+            "from": "T-005",
+            "to": "T-006"
+          }
+        ],
+        "approval_required": true,
+        "estimated_cost": {
+          "currency": "USD",
+          "minimum": 0,
+          "maximum": 0.33,
+          "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+        },
+        "risk_summary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)"
+      },
+      "task_graph": {
+        "run_id": "run_20260625031928444_ewjngc",
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "读取项目结构与需求上下文",
+            "difficulty": "L0",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": []
+          },
+          {
+            "task_id": "T-002",
+            "title": "生成任务合同与执行约束",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": [
+              "T-001"
+            ]
+          },
+          {
+            "task_id": "T-003",
+            "title": "实现核心代码变更",
+            "difficulty": "L2",
+            "risk": "medium",
+            "model_tier": "standard",
+            "final_verification": false,
+            "depends_on": [
+              "T-002"
+            ]
+          },
+          {
+            "task_id": "T-004",
+            "title": "补充测试与验证命令",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "standard",
+            "final_verification": false,
+            "depends_on": [
+              "T-003"
+            ]
+          },
+          {
+            "task_id": "T-005",
+            "title": "运行验证并收集证据",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": [
+              "T-004"
+            ]
+          },
+          {
+            "task_id": "T-006",
+            "title": "最终审查与交付报告",
+            "difficulty": "L4",
+            "risk": "high",
+            "model_tier": "premium",
+            "final_verification": true,
+            "depends_on": [
+              "T-005"
+            ]
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "T-001",
+            "to": "T-002"
+          },
+          {
+            "from": "T-002",
+            "to": "T-003"
+          },
+          {
+            "from": "T-003",
+            "to": "T-004"
+          },
+          {
+            "from": "T-004",
+            "to": "T-005"
+          },
+          {
+            "from": "T-005",
+            "to": "T-006"
+          }
+        ],
+        "approval_required": true,
+        "estimated_cost": {
+          "currency": "USD",
+          "minimum": 0,
+          "maximum": 0.33,
+          "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+        },
+        "risk_summary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)"
+      },
+      "workspaceSummary": {
+        "cwd": "D:\\github\\ai-coding-runtime",
+        "totalFiles": 125,
+        "total_files": 125,
+        "matchedRequestFiles": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "matched_request_files": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "projectSignals": [
+          "node-package",
+          "src-directory",
+          "tests-directory",
+          "docs-directory",
+          "runtime-config"
+        ],
+        "project_signals": [
+          "node-package",
+          "src-directory",
+          "tests-directory",
+          "docs-directory",
+          "runtime-config"
+        ]
+      },
+      "workspace_summary": {
+        "cwd": "D:\\github\\ai-coding-runtime",
+        "totalFiles": 125,
+        "total_files": 125,
+        "matchedRequestFiles": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "matched_request_files": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "projectSignals": [
+          "node-package",
+          "src-directory",
+          "tests-directory",
+          "docs-directory",
+          "runtime-config"
+        ],
+        "project_signals": [
+          "node-package",
+          "src-directory",
+          "tests-directory",
+          "docs-directory",
+          "runtime-config"
+        ]
+      },
+      "riskSummary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)",
+      "risk_summary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)",
+      "estimatedCost": {
+        "currency": "USD",
+        "minimum": 0,
+        "maximum": 0.33,
+        "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+      },
+      "estimated_cost": {
+        "currency": "USD",
+        "minimum": 0,
+        "maximum": 0.33,
+        "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+      },
+      "tasks": [
+        {
+          "task_id": "T-001",
+          "title": "读取项目结构与需求上下文",
+          "goal": "Understand the workspace and clarify the requested outcome: 修改 src/runtime/inspection.js 并补 tests/inspection.test.js",
+          "difficulty": "L0",
+          "risk": "low",
+          "model_tier": "cheap",
+          "acceptance": [
+            "workspace structure is summarized",
+            "request is preserved in the run trace",
+            "workspace summary records 125 file(s)"
+          ]
+        },
+        {
+          "task_id": "T-002",
+          "title": "生成任务合同与执行约束",
+          "goal": "Turn the request into explicit worker-safe task contracts.",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "cheap",
+          "acceptance": [
+            "each executable task has acceptance criteria",
+            "each executable task has forbidden actions"
+          ]
+        },
+        {
+          "task_id": "T-003",
+          "title": "实现核心代码变更",
+          "goal": "Apply the requested implementation inside the approved workspace scope.",
+          "difficulty": "L2",
+          "risk": "medium",
+          "model_tier": "standard",
+          "acceptance": [
+            "implementation matches the approved task contract",
+            "changed files remain inside the allowlist",
+            "planner narrows execution scope to explicitly mentioned workspace files"
+          ]
+        },
+        {
+          "task_id": "T-004",
+          "title": "补充测试与验证命令",
+          "goal": "Add or identify verification that proves the requested behavior.",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "standard",
+          "acceptance": [
+            "verification command is recorded",
+            "new behavior has test coverage when code changes are made",
+            "planner narrows execution scope to explicitly mentioned workspace files"
+          ]
+        },
+        {
+          "task_id": "T-005",
+          "title": "运行验证并收集证据",
+          "goal": "Run configured checks and capture the evidence needed for final review.",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "cheap",
+          "acceptance": [
+            "verification results include command, exit code, and output summary",
+            "failed verification blocks final success"
+          ]
+        },
+        {
+          "task_id": "T-006",
+          "title": "最终审查与交付报告",
+          "goal": "Review the full run, explain routing decisions, and prepare the final report.",
+          "difficulty": "L4",
+          "risk": "high",
+          "model_tier": "premium",
+          "acceptance": [
+            "final report includes task graph, routing, and verification evidence",
+            "premium-tier final review is recorded"
+          ]
+        }
+      ],
+      "nextSteps": [
+        "Review task contracts",
+        "Approve or reject the plan before execution"
+      ],
+      "supervisorPlanning": {
+        "enabled": true,
+        "status": "fallback",
+        "provider": "openai-compatible",
+        "model": "gpt-5.5",
+        "taskCount": 6,
+        "task_count": 6,
+        "reason": "Provider openai-compatible request failed with HTTP 400: litellm.BadRequestError: OpenAIException - Invalid schema for response_format 'runtime_response': In context=('properties', 'tasks', 'items'), 'required' is required to be supplied and to be an array including every key in properties. Missing 'referenced_files'.. Received Model Group=gpt-5.5\nAvailable Model Group Fallbacks=None",
+        "fallback": true
+      },
+      "supervisor_planning": {
+        "enabled": true,
+        "status": "fallback",
+        "provider": "openai-compatible",
+        "model": "gpt-5.5",
+        "taskCount": 6,
+        "task_count": 6,
+        "reason": "Provider openai-compatible request failed with HTTP 400: litellm.BadRequestError: OpenAIException - Invalid schema for response_format 'runtime_response': In context=('properties', 'tasks', 'items'), 'required' is required to be supplied and to be an array including every key in properties. Missing 'referenced_files'.. Received Model Group=gpt-5.5\nAvailable Model Group Fallbacks=None",
+        "fallback": true
+      }
+    },
+    "plan_report": {
+      "summary": "Plan contains 6 task(s), 5 dependency edge(s), and requires human approval.",
+      "approval": {
+        "required": true,
+        "status": "required",
+        "reasons": [
+          {
+            "task_id": "T-003",
+            "title": "实现核心代码变更",
+            "risk": "medium",
+            "reason": "medium-risk task requires human approval before execution"
+          },
+          {
+            "task_id": "T-006",
+            "title": "最终审查与交付报告",
+            "risk": "high",
+            "reason": "high-risk task requires human approval before execution"
+          }
+        ]
+      },
+      "validation": {
+        "valid": true,
+        "errorCount": 0,
+        "errors": []
+      },
+      "taskGraph": {
+        "run_id": "run_20260625031928444_ewjngc",
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "读取项目结构与需求上下文",
+            "difficulty": "L0",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": []
+          },
+          {
+            "task_id": "T-002",
+            "title": "生成任务合同与执行约束",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": [
+              "T-001"
+            ]
+          },
+          {
+            "task_id": "T-003",
+            "title": "实现核心代码变更",
+            "difficulty": "L2",
+            "risk": "medium",
+            "model_tier": "standard",
+            "final_verification": false,
+            "depends_on": [
+              "T-002"
+            ]
+          },
+          {
+            "task_id": "T-004",
+            "title": "补充测试与验证命令",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "standard",
+            "final_verification": false,
+            "depends_on": [
+              "T-003"
+            ]
+          },
+          {
+            "task_id": "T-005",
+            "title": "运行验证并收集证据",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": [
+              "T-004"
+            ]
+          },
+          {
+            "task_id": "T-006",
+            "title": "最终审查与交付报告",
+            "difficulty": "L4",
+            "risk": "high",
+            "model_tier": "premium",
+            "final_verification": true,
+            "depends_on": [
+              "T-005"
+            ]
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "T-001",
+            "to": "T-002"
+          },
+          {
+            "from": "T-002",
+            "to": "T-003"
+          },
+          {
+            "from": "T-003",
+            "to": "T-004"
+          },
+          {
+            "from": "T-004",
+            "to": "T-005"
+          },
+          {
+            "from": "T-005",
+            "to": "T-006"
+          }
+        ],
+        "approval_required": true,
+        "estimated_cost": {
+          "currency": "USD",
+          "minimum": 0,
+          "maximum": 0.33,
+          "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+        },
+        "risk_summary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)"
+      },
+      "task_graph": {
+        "run_id": "run_20260625031928444_ewjngc",
+        "tasks": [
+          {
+            "task_id": "T-001",
+            "title": "读取项目结构与需求上下文",
+            "difficulty": "L0",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": []
+          },
+          {
+            "task_id": "T-002",
+            "title": "生成任务合同与执行约束",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": [
+              "T-001"
+            ]
+          },
+          {
+            "task_id": "T-003",
+            "title": "实现核心代码变更",
+            "difficulty": "L2",
+            "risk": "medium",
+            "model_tier": "standard",
+            "final_verification": false,
+            "depends_on": [
+              "T-002"
+            ]
+          },
+          {
+            "task_id": "T-004",
+            "title": "补充测试与验证命令",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "standard",
+            "final_verification": false,
+            "depends_on": [
+              "T-003"
+            ]
+          },
+          {
+            "task_id": "T-005",
+            "title": "运行验证并收集证据",
+            "difficulty": "L1",
+            "risk": "low",
+            "model_tier": "cheap",
+            "final_verification": false,
+            "depends_on": [
+              "T-004"
+            ]
+          },
+          {
+            "task_id": "T-006",
+            "title": "最终审查与交付报告",
+            "difficulty": "L4",
+            "risk": "high",
+            "model_tier": "premium",
+            "final_verification": true,
+            "depends_on": [
+              "T-005"
+            ]
+          }
+        ],
+        "dependencies": [
+          {
+            "from": "T-001",
+            "to": "T-002"
+          },
+          {
+            "from": "T-002",
+            "to": "T-003"
+          },
+          {
+            "from": "T-003",
+            "to": "T-004"
+          },
+          {
+            "from": "T-004",
+            "to": "T-005"
+          },
+          {
+            "from": "T-005",
+            "to": "T-006"
+          }
+        ],
+        "approval_required": true,
+        "estimated_cost": {
+          "currency": "USD",
+          "minimum": 0,
+          "maximum": 0.33,
+          "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+        },
+        "risk_summary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)"
+      },
+      "workspaceSummary": {
+        "cwd": "D:\\github\\ai-coding-runtime",
+        "totalFiles": 125,
+        "total_files": 125,
+        "matchedRequestFiles": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "matched_request_files": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "projectSignals": [
+          "node-package",
+          "src-directory",
+          "tests-directory",
+          "docs-directory",
+          "runtime-config"
+        ],
+        "project_signals": [
+          "node-package",
+          "src-directory",
+          "tests-directory",
+          "docs-directory",
+          "runtime-config"
+        ]
+      },
+      "workspace_summary": {
+        "cwd": "D:\\github\\ai-coding-runtime",
+        "totalFiles": 125,
+        "total_files": 125,
+        "matchedRequestFiles": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "matched_request_files": [
+          "src/runtime/inspection.js",
+          "tests/inspection.test.js"
+        ],
+        "projectSignals": [
+          "node-package",
+          "src-directory",
+          "tests-directory",
+          "docs-directory",
+          "runtime-config"
+        ],
+        "project_signals": [
+          "node-package",
+          "src-directory",
+          "tests-directory",
+          "docs-directory",
+          "runtime-config"
+        ]
+      },
+      "riskSummary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)",
+      "risk_summary": "high: 1 high-risk task(s), 1 medium-risk task(s), 4 low-risk task(s)",
+      "estimatedCost": {
+        "currency": "USD",
+        "minimum": 0,
+        "maximum": 0.33,
+        "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+      },
+      "estimated_cost": {
+        "currency": "USD",
+        "minimum": 0,
+        "maximum": 0.33,
+        "note": "V0 estimates routing cost from model tier hints but does not call real model providers."
+      },
+      "tasks": [
+        {
+          "task_id": "T-001",
+          "title": "读取项目结构与需求上下文",
+          "goal": "Understand the workspace and clarify the requested outcome: 修改 src/runtime/inspection.js 并补 tests/inspection.test.js",
+          "difficulty": "L0",
+          "risk": "low",
+          "model_tier": "cheap",
+          "acceptance": [
+            "workspace structure is summarized",
+            "request is preserved in the run trace",
+            "workspace summary records 125 file(s)"
+          ]
+        },
+        {
+          "task_id": "T-002",
+          "title": "生成任务合同与执行约束",
+          "goal": "Turn the request into explicit worker-safe task contracts.",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "cheap",
+          "acceptance": [
+            "each executable task has acceptance criteria",
+            "each executable task has forbidden actions"
+          ]
+        },
+        {
+          "task_id": "T-003",
+          "title": "实现核心代码变更",
+          "goal": "Apply the requested implementation inside the approved workspace scope.",
+          "difficulty": "L2",
+          "risk": "medium",
+          "model_tier": "standard",
+          "acceptance": [
+            "implementation matches the approved task contract",
+            "changed files remain inside the allowlist",
+            "planner narrows execution scope to explicitly mentioned workspace files"
+          ]
+        },
+        {
+          "task_id": "T-004",
+          "title": "补充测试与验证命令",
+          "goal": "Add or identify verification that proves the requested behavior.",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "standard",
+          "acceptance": [
+            "verification command is recorded",
+            "new behavior has test coverage when code changes are made",
+            "planner narrows execution scope to explicitly mentioned workspace files"
+          ]
+        },
+        {
+          "task_id": "T-005",
+          "title": "运行验证并收集证据",
+          "goal": "Run configured checks and capture the evidence needed for final review.",
+          "difficulty": "L1",
+          "risk": "low",
+          "model_tier": "cheap",
+          "acceptance": [
+            "verification results include command, exit code, and output summary",
+            "failed verification blocks final success"
+          ]
+        },
+        {
+          "task_id": "T-006",
+          "title": "最终审查与交付报告",
+          "goal": "Review the full run, explain routing decisions, and prepare the final report.",
+          "difficulty": "L4",
+          "risk": "high",
+          "model_tier": "premium",
+          "acceptance": [
+            "final report includes task graph, routing, and verification evidence",
+            "premium-tier final review is recorded"
+          ]
+        }
+      ],
+      "nextSteps": [
+        "Review task contracts",
+        "Approve or reject the plan before execution"
+      ],
+      "supervisorPlanning": {
+        "enabled": true,
+        "status": "fallback",
+        "provider": "openai-compatible",
+        "model": "gpt-5.5",
+        "taskCount": 6,
+        "task_count": 6,
+        "reason": "Provider openai-compatible request failed with HTTP 400: litellm.BadRequestError: OpenAIException - Invalid schema for response_format 'runtime_response': In context=('properties', 'tasks', 'items'), 'required' is required to be supplied and to be an array including every key in properties. Missing 'referenced_files'.. Received Model Group=gpt-5.5\nAvailable Model Group Fallbacks=None",
+        "fallback": true
+      },
+      "supervisor_planning": {
+        "enabled": true,
+        "status": "fallback",
+        "provider": "openai-compatible",
+        "model": "gpt-5.5",
+        "taskCount": 6,
+        "task_count": 6,
+        "reason": "Provider openai-compatible request failed with HTTP 400: litellm.BadRequestError: OpenAIException - Invalid schema for response_format 'runtime_response': In context=('properties', 'tasks', 'items'), 'required' is required to be supplied and to be an array including every key in properties. Missing 'referenced_files'.. Received Model Group=gpt-5.5\nAvailable Model Group Fallbacks=None",
+        "fallback": true
+      }
+    },
+    "supervisorPlanning": {
+      "enabled": true,
+      "status": "fallback",
+      "provider": "openai-compatible",
+      "model": "gpt-5.5",
+      "taskCount": 6,
+      "task_count": 6,
+      "reason": "Provider openai-compatible request failed with HTTP 400: litellm.BadRequestError: OpenAIException - Invalid schema for response_format 'runtime_response': In context=('properties', 'tasks', 'items'), 'required' is required to be supplied and to be an array including every key in properties. Missing 'referenced_files'.. Received Model Group=gpt-5.5\nAvailable Model Group Fallbacks=None",
+      "fallback": true
+    },
+    "supervisor_planning": {
+      "enabled": true,
+      "status": "fallback",
+      "provider": "openai-compatible",
+      "model": "gpt-5.5",
+      "taskCount": 6,
+      "task_count": 6,
+      "reason": "Provider openai-compatible request failed with HTTP 400: litellm.BadRequestError: OpenAIException - Invalid schema for response_format 'runtime_response': In context=('properties', 'tasks', 'items'), 'required' is required to be supplied and to be an array including every key in properties. Missing 'referenced_files'.. Received Model Group=gpt-5.5\nAvailable Model Group Fallbacks=None",
+      "fallback": true
+    }
+  },
+  "events": [
+    {
+      "type": "run.created",
+      "timestamp": "2026-06-25T03:19:28.444Z",
+      "message": "Runtime run record created."
+    },
+    {
+      "type": "approval.required",
+      "timestamp": "2026-06-25T03:19:28.444Z",
+      "message": "Human approval is required before execution.",
+      "reasons": [
+        {
+          "task_id": "T-003",
+          "title": "实现核心代码变更",
+          "risk": "medium",
+          "reason": "medium-risk task requires human approval before execution"
+        },
+        {
+          "task_id": "T-006",
+          "title": "最终审查与交付报告",
+          "risk": "high",
+          "reason": "high-risk task requires human approval before execution"
+        }
+      ]
+    },
+    {
+      "type": "task.routed",
+      "timestamp": "2026-06-25T03:19:28.444Z",
+      "taskId": "T-001",
+      "task_id": "T-001",
+      "modelTier": "cheap",
+      "model_tier": "cheap",
+      "reason": "L0 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+      "selectedModel": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4-mini",
+        "tier": "cheap",
+        "cost_hint": {
+          "label": "low",
+          "estimated_usd_per_call": 0.01
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "summarize",
+          "extract"
+        ],
+        "strengths": [
+          "read-only analysis",
+          "summaries",
+          "simple generation"
+        ],
+        "blocked_task_types": [
+          "file_edit",
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "selected_model": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4-mini",
+        "tier": "cheap",
+        "cost_hint": {
+          "label": "low",
+          "estimated_usd_per_call": 0.01
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "summarize",
+          "extract"
+        ],
+        "strengths": [
+          "read-only analysis",
+          "summaries",
+          "simple generation"
+        ],
+        "blocked_task_types": [
+          "file_edit",
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "escalationTriggers": [
+        "missing_result",
+        "conflicting_result"
+      ],
+      "escalation_triggers": [
+        "missing_result",
+        "conflicting_result"
+      ]
+    },
+    {
+      "type": "task.routed",
+      "timestamp": "2026-06-25T03:19:28.444Z",
+      "taskId": "T-002",
+      "task_id": "T-002",
+      "modelTier": "cheap",
+      "model_tier": "cheap",
+      "reason": "L1 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+      "selectedModel": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4-mini",
+        "tier": "cheap",
+        "cost_hint": {
+          "label": "low",
+          "estimated_usd_per_call": 0.01
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "summarize",
+          "extract"
+        ],
+        "strengths": [
+          "read-only analysis",
+          "summaries",
+          "simple generation"
+        ],
+        "blocked_task_types": [
+          "file_edit",
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "selected_model": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4-mini",
+        "tier": "cheap",
+        "cost_hint": {
+          "label": "low",
+          "estimated_usd_per_call": 0.01
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "summarize",
+          "extract"
+        ],
+        "strengths": [
+          "read-only analysis",
+          "summaries",
+          "simple generation"
+        ],
+        "blocked_task_types": [
+          "file_edit",
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "escalationTriggers": [
+        "invalid_patch",
+        "failed_checks"
+      ],
+      "escalation_triggers": [
+        "invalid_patch",
+        "failed_checks"
+      ]
+    },
+    {
+      "type": "task.routed",
+      "timestamp": "2026-06-25T03:19:28.444Z",
+      "taskId": "T-003",
+      "task_id": "T-003",
+      "modelTier": "standard",
+      "model_tier": "standard",
+      "reason": "L2 default routing tier; medium-risk minimum tier; medium context requirement; medium verification strength; file-editing tasks require at least the standard tier",
+      "selectedModel": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4",
+        "tier": "standard",
+        "cost_hint": {
+          "label": "medium",
+          "estimated_usd_per_call": 0.05
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "summarize"
+        ],
+        "strengths": [
+          "local code changes",
+          "tests",
+          "bounded refactors"
+        ],
+        "blocked_task_types": [
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "selected_model": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4",
+        "tier": "standard",
+        "cost_hint": {
+          "label": "medium",
+          "estimated_usd_per_call": 0.05
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "summarize"
+        ],
+        "strengths": [
+          "local code changes",
+          "tests",
+          "bounded refactors"
+        ],
+        "blocked_task_types": [
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "escalationTriggers": [
+        "failed_tests",
+        "uncertain_diff"
+      ],
+      "escalation_triggers": [
+        "failed_tests",
+        "uncertain_diff"
+      ]
+    },
+    {
+      "type": "task.routed",
+      "timestamp": "2026-06-25T03:19:28.444Z",
+      "taskId": "T-004",
+      "task_id": "T-004",
+      "modelTier": "standard",
+      "model_tier": "standard",
+      "reason": "L1 default routing tier; low-risk minimum tier; medium context requirement; easy verification strength; file-editing tasks require at least the standard tier",
+      "selectedModel": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4",
+        "tier": "standard",
+        "cost_hint": {
+          "label": "medium",
+          "estimated_usd_per_call": 0.05
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "summarize"
+        ],
+        "strengths": [
+          "local code changes",
+          "tests",
+          "bounded refactors"
+        ],
+        "blocked_task_types": [
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "selected_model": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4",
+        "tier": "standard",
+        "cost_hint": {
+          "label": "medium",
+          "estimated_usd_per_call": 0.05
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "summarize"
+        ],
+        "strengths": [
+          "local code changes",
+          "tests",
+          "bounded refactors"
+        ],
+        "blocked_task_types": [
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "escalationTriggers": [
+        "invalid_patch",
+        "failed_checks"
+      ],
+      "escalation_triggers": [
+        "invalid_patch",
+        "failed_checks"
+      ]
+    },
+    {
+      "type": "task.routed",
+      "timestamp": "2026-06-25T03:19:28.444Z",
+      "taskId": "T-005",
+      "task_id": "T-005",
+      "modelTier": "cheap",
+      "model_tier": "cheap",
+      "reason": "L1 default routing tier; low-risk minimum tier; low context requirement; easy verification strength",
+      "selectedModel": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4-mini",
+        "tier": "cheap",
+        "cost_hint": {
+          "label": "low",
+          "estimated_usd_per_call": 0.01
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "summarize",
+          "extract"
+        ],
+        "strengths": [
+          "read-only analysis",
+          "summaries",
+          "simple generation"
+        ],
+        "blocked_task_types": [
+          "file_edit",
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "selected_model": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.4-mini",
+        "tier": "cheap",
+        "cost_hint": {
+          "label": "low",
+          "estimated_usd_per_call": 0.01
+        },
+        "context_window": 128000,
+        "tool_support": [
+          "read",
+          "summarize",
+          "extract"
+        ],
+        "strengths": [
+          "read-only analysis",
+          "summaries",
+          "simple generation"
+        ],
+        "blocked_task_types": [
+          "file_edit",
+          "security",
+          "migration",
+          "final_verification"
+        ]
+      },
+      "escalationTriggers": [
+        "invalid_patch",
+        "failed_checks"
+      ],
+      "escalation_triggers": [
+        "invalid_patch",
+        "failed_checks"
+      ]
+    },
+    {
+      "type": "task.routed",
+      "timestamp": "2026-06-25T03:19:28.444Z",
+      "taskId": "T-006",
+      "task_id": "T-006",
+      "modelTier": "premium",
+      "model_tier": "premium",
+      "reason": "L4 default routing tier; high-risk minimum tier; high context requirement; hard verification strength; final verification always uses the premium tier",
+      "selectedModel": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.5",
+        "tier": "premium",
+        "cost_hint": {
+          "label": "high",
+          "estimated_usd_per_call": 0.2
+        },
+        "context_window": 256000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "review",
+          "plan"
+        ],
+        "strengths": [
+          "architecture",
+          "security review",
+          "cross-module changes",
+          "final verification"
+        ],
+        "blocked_task_types": []
+      },
+      "selected_model": {
+        "provider": "openai-compatible",
+        "model": "gpt-5.5",
+        "tier": "premium",
+        "cost_hint": {
+          "label": "high",
+          "estimated_usd_per_call": 0.2
+        },
+        "context_window": 256000,
+        "tool_support": [
+          "read",
+          "patch",
+          "test",
+          "review",
+          "plan"
+        ],
+        "strengths": [
+          "architecture",
+          "security review",
+          "cross-module changes",
+          "final verification"
+        ],
+        "blocked_task_types": []
+      },
+      "escalationTriggers": [
+        "human_approval",
+        "final_review"
+      ],
+      "escalation_triggers": [
+        "human_approval",
+        "final_review"
+      ]
+    },
+    {
+      "type": "approval.approved",
+      "timestamp": "2026-06-25T03:20:00.000Z",
+      "approvedBy": "demo-user",
+      "approved_by": "demo-user",
+      "note": "demo approval"
+    },
+    {
+      "type": "task.execution.escalated",
+      "timestamp": "2026-06-25T03:20:25.000Z",
+      "taskId": "T-003",
+      "task_id": "T-003",
+      "fromTier": "standard",
+      "from_tier": "standard",
+      "toTier": "premium",
+      "to_tier": "premium",
+      "fromModel": "gpt-5.4",
+      "from_model": "gpt-5.4",
+      "toModel": "gpt-5.5",
+      "to_model": "gpt-5.5",
+      "reason": "worker.output.malformed",
+      "attempt": 1
+    }
+  ],
+  "modelCalls": [
+    {
+      "timestamp": "2026-06-25T03:20:10.000Z",
+      "taskId": "T-003",
+      "task_id": "T-003",
+      "provider": "openai-compatible",
+      "model": "gpt-5.4",
+      "usage": {
+        "totalTokens": 1200
+      },
+      "costEstimate": {
+        "currency": "USD",
+        "estimatedCost": 0.05
+      },
+      "request": {
+        "taskId": "T-003"
+      }
+    },
+    {
+      "timestamp": "2026-06-25T03:20:30.000Z",
+      "taskId": "T-003",
+      "task_id": "T-003",
+      "provider": "openai-compatible",
+      "model": "gpt-5.5",
+      "usage": {
+        "totalTokens": 1800
+      },
+      "costEstimate": {
+        "currency": "USD",
+        "estimatedCost": 0.2
+      },
+      "request": {
+        "taskId": "T-003"
+      }
+    },
+    {
+      "timestamp": "2026-06-25T03:20:50.000Z",
+      "taskId": "T-004",
+      "task_id": "T-004",
+      "provider": "openai-compatible",
+      "model": "gpt-5.4",
+      "usage": {
+        "totalTokens": 900
+      },
+      "costEstimate": {
+        "currency": "USD",
+        "estimatedCost": 0.05
+      },
+      "request": {
+        "taskId": "T-004"
+      }
+    }
+  ],
+  "workerAttempts": [
+    {
+      "timestamp": "2026-06-25T03:20:20.000Z",
+      "attemptId": "attempt_t3_1",
+      "attempt_id": "attempt_t3_1",
+      "taskId": "T-003",
+      "task_id": "T-003",
+      "status": "failed",
+      "applied": false,
+      "confidence": 0.41,
+      "filesTouched": [
+        "src/runtime/inspection.js"
+      ],
+      "files_touched": [
+        "src/runtime/inspection.js"
+      ],
+      "validation": {
+        "errors": [
+          {
+            "code": "worker.output.malformed",
+            "message": "补丁格式无效"
+          }
+        ]
+      }
+    },
+    {
+      "timestamp": "2026-06-25T03:20:40.000Z",
+      "attemptId": "attempt_t3_2",
+      "attempt_id": "attempt_t3_2",
+      "taskId": "T-003",
+      "task_id": "T-003",
+      "status": "applied",
+      "applied": true,
+      "confidence": 0.87,
+      "filesTouched": [
+        "src/runtime/inspection.js"
+      ],
+      "files_touched": [
+        "src/runtime/inspection.js"
+      ],
+      "acceptance": {
+        "implementation matches the approved task contract": "已补充 inspect 输出字段",
+        "changed files remain inside the allowlist": "仅修改 src/runtime/inspection.js",
+        "planner narrows execution scope to explicitly mentioned workspace files": "范围保持在显式提及文件内"
+      }
+    },
+    {
+      "timestamp": "2026-06-25T03:20:55.000Z",
+      "attemptId": "attempt_t4_1",
+      "attempt_id": "attempt_t4_1",
+      "taskId": "T-004",
+      "task_id": "T-004",
+      "status": "applied",
+      "applied": true,
+      "confidence": 0.91,
+      "filesTouched": [
+        "tests/inspection.test.js"
+      ],
+      "files_touched": [
+        "tests/inspection.test.js"
+      ],
+      "acceptance": {
+        "verification command is recorded": "已记录 npm test",
+        "new behavior has test coverage when code changes are made": "已补 inspection 测试",
+        "planner narrows execution scope to explicitly mentioned workspace files": "仅修改 tests/inspection.test.js"
+      }
+    }
+  ],
+  "verification": [
+    {
+      "name": "verification",
+      "status": "failed",
+      "message": "验证失败。",
+      "commands": [
+        {
+          "name": "npm test",
+          "status": "failed",
+          "required": true,
+          "exitCode": 1,
+          "durationMs": 12400
+        }
+      ],
+      "acceptance": {
+        "status": "passed",
+        "tasks": [
+          {
+            "task_id": "T-003",
+            "status": "passed",
+            "items": [
+              {
+                "criterion": "implementation matches the approved task contract",
+                "status": "passed",
+                "evidence": "已补充 inspect 输出字段"
+              },
+              {
+                "criterion": "changed files remain inside the allowlist",
+                "status": "passed",
+                "evidence": "仅修改 src/runtime/inspection.js"
+              },
+              {
+                "criterion": "planner narrows execution scope to explicitly mentioned workspace files",
+                "status": "passed",
+                "evidence": "范围保持在显式提及文件内"
+              }
+            ]
+          },
+          {
+            "task_id": "T-004",
+            "status": "passed",
+            "items": [
+              {
+                "criterion": "verification command is recorded",
+                "status": "passed",
+                "evidence": "已记录 npm test"
+              },
+              {
+                "criterion": "new behavior has test coverage when code changes are made",
+                "status": "passed",
+                "evidence": "已补 inspection 测试"
+              },
+              {
+                "criterion": "planner narrows execution scope to explicitly mentioned workspace files",
+                "status": "passed",
+                "evidence": "仅修改 tests/inspection.test.js"
+              }
+            ]
+          }
+        ]
+      },
+      "supervisorReview": {
+        "status": "failed",
+        "blockingIssues": [
+          "npm test 存在失败用例"
+        ],
+        "summary": "实现与测试范围正确，但最终验证未通过。"
+      },
+      "escalation": {
+        "required": true,
+        "reason": "verification_failed_after_non_premium_worker",
+        "fromTiers": [
+          "standard"
+        ],
+        "targetTier": "premium"
+      }
+    }
+  ],
+  "report": null
+}
