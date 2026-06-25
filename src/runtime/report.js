@@ -36,6 +36,7 @@ export function createReport(
     [record, ...historyRecords, ...importedHistoryRecords],
     { policy, importedRecordCount }
   );
+  const shadowClassifier = record.plan.shadowClassifier ?? record.plan.shadow_classifier ?? null;
   const finalReport = {
     summary: `Planned ${tasks.length} task(s) for runtime execution.`,
     changedFiles,
@@ -101,6 +102,8 @@ export function createReport(
     modelReliability,
     learningProfile,
     learning_profile: learningProfile,
+    shadowClassifier,
+    shadow_classifier: shadowClassifier,
     traceViewerData: createTraceViewerData(record),
     exportFormat: {
       schema: "ai-coding-runtime.report",
@@ -119,6 +122,7 @@ export function createReport(
         "trace_viewer_data",
         "model_reliability",
         "learning_profile",
+        "shadow_classifier",
         "failure_analysis",
       ],
     },
@@ -232,6 +236,9 @@ export function formatReportMarkdown(report) {
     `## Learning`,
     ...formatLearningProfile(report.learningProfile),
     ``,
+    `## Shadow LLM Classifier`,
+    ...formatShadowClassifier(report.shadowClassifier),
+    ``,
     `## Follow-Up Recommendations`,
     ...(report.finalReport?.followUpRecommendations?.length
       ? report.finalReport.followUpRecommendations.map((item) => `- ${item}`)
@@ -239,6 +246,23 @@ export function formatReportMarkdown(report) {
   ];
 
   return `${lines.join("\n")}\n`;
+}
+
+function formatShadowClassifier(shadowClassifier) {
+  if (!shadowClassifier) return ["- status: unavailable"];
+  const summary = shadowClassifier.summary ?? {};
+  return [
+    `- status: ${shadowClassifier.status ?? "unknown"}`,
+    `- enabled: ${shadowClassifier.enabled === true}`,
+    `- mode: ${shadowClassifier.mode ?? "unknown"}`,
+    `- provider/model: ${shadowClassifier.provider ?? "none"}/${shadowClassifier.model ?? "none"}`,
+    `- potential savings: USD ${summary.potentialSavingsUsd ?? summary.potential_savings_usd ?? 0} across ${summary.potentialSavingsTasks ?? summary.potential_savings_tasks ?? 0} task(s)`,
+    `- blocked by safety floor: ${summary.blockedBySafetyFloorTasks ?? summary.blocked_by_safety_floor_tasks ?? 0}`,
+    `- ignored for low confidence: ${summary.ignoredLowConfidenceTasks ?? summary.ignored_low_confidence_tasks ?? 0}`,
+    ...(shadowClassifier.warnings?.length
+      ? shadowClassifier.warnings.map((warning) => `- warning: ${warning}`)
+      : ["- warnings: none"]),
+  ];
 }
 
 function summarizeTasks(tasks) {

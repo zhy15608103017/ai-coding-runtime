@@ -598,6 +598,7 @@ safety:
 - [x] Recommend stronger tiers for task types with frequent cheap-model failures.
 - [x] Add policy option to disable learning.
 - [x] Add export/import for routing history.
+- [x] Add shadow LLM classifier recommendations without changing live routing.
 
 **Acceptance Criteria:**
 

@@ -211,6 +211,8 @@ async function createEstimate(request, runtimeOptions = {}) {
     policy_status: plan.policy_status,
     supervisorPlanning: plan.supervisorPlanning,
     supervisor_planning: plan.supervisor_planning,
+    shadowClassifier: plan.shadowClassifier,
+    shadow_classifier: plan.shadow_classifier,
     routingTrace: plan.routingTrace,
     estimatedCost: plan.estimatedCost,
     approvalRequired: plan.approvalRequired,

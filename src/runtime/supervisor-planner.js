@@ -1,11 +1,12 @@
 import { createRuntimePlan } from "./planner.js";
 import { redactSecrets } from "./policy.js";
 import { generateModelResponse } from "./providers.js";
+import { runShadowClassifier } from "./shadow-classifier.js";
 
 export async function createRuntimePlanWithSupervisor(options = {}) {
   const supervisorConfig = resolveSupervisorConfig(options);
   if (supervisorConfig.enabled !== true) {
-    return createRuntimePlan(options);
+    return attachShadowClassification(createRuntimePlan(options), options);
   }
 
   let providerRequest = { provider: null, model: null };
@@ -27,7 +28,7 @@ export async function createRuntimePlanWithSupervisor(options = {}) {
       throw new Error(`Supervisor planner produced invalid task contracts: ${validationCodes(plan).join(", ")}`);
     }
 
-    return attachSupervisorPlanning(plan, {
+    return attachShadowClassification(attachSupervisorPlanning(plan, {
       enabled: true,
       status: "used",
       provider: response.provider ?? providerRequest.provider,
@@ -37,10 +38,10 @@ export async function createRuntimePlanWithSupervisor(options = {}) {
       finishReason: response.finishReason ?? response.finish_reason ?? null,
       finish_reason: response.finishReason ?? response.finish_reason ?? null,
       fallback: false,
-    });
+    }), options);
   } catch (error) {
     const plan = createRuntimePlan(options);
-    return attachSupervisorPlanning(plan, {
+    return attachShadowClassification(attachSupervisorPlanning(plan, {
       enabled: true,
       status: "fallback",
       provider: providerRequest.provider ?? null,
@@ -49,8 +50,28 @@ export async function createRuntimePlanWithSupervisor(options = {}) {
       task_count: plan.tasks.length,
       reason: error.message,
       fallback: true,
-    });
+    }), options);
   }
+}
+
+async function attachShadowClassification(plan, options = {}) {
+  const generate =
+    options.shadowClassifier?.generate ??
+    options.execution?.shadowClassifier?.generate ??
+    options.generate ??
+    options.execution?.generate ??
+    generateModelResponse;
+  const shadowClassifier = await runShadowClassifier(plan, {
+    policy: plan.policyConfig ?? options.policy,
+    providers: options.providers,
+    modelRegistry: plan.modelRegistry ?? options.modelRegistry,
+    generate,
+  });
+  return redactSecrets({
+    ...plan,
+    shadowClassifier,
+    shadow_classifier: shadowClassifier,
+  }, plan.policyConfig ?? options.policy);
 }
 
 function resolveSupervisorConfig(options = {}) {

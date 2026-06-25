@@ -419,6 +419,467 @@ test("createRuntimePlanWithSupervisor uses model-generated task drafts when enab
   assert.equal(plan.tasks[2].model_tier, "premium");
 });
 
+test("Shadow classifier policy defaults to disabled shadow mode", () => {
+  const policy = runtimeIndex.normalizePolicyConfig();
+
+  assert.equal(runtimeIndex.DEFAULT_POLICY_CONFIG.shadowClassifier.enabled, false);
+  assert.equal(runtimeIndex.DEFAULT_POLICY_CONFIG.shadowClassifier.mode, "off");
+  assert.equal(runtimeIndex.DEFAULT_POLICY_CONFIG.shadow_classifier.enabled, false);
+  assert.equal(runtimeIndex.DEFAULT_POLICY_CONFIG.shadow_classifier.mode, "off");
+  assert.equal(policy.shadowClassifier.enabled, false);
+  assert.equal(policy.shadowClassifier.mode, "off");
+  assert.equal(policy.shadow_classifier.enabled, false);
+  assert.equal(policy.shadow_classifier.mode, "off");
+});
+
+test("Shadow classifier policy accepts snake_case config without camelCase shadowing", () => {
+  const policy = runtimeIndex.normalizePolicyConfig({
+    shadow_classifier: {
+      enabled: true,
+      provider: "snake-provider",
+      model: "snake-classifier",
+      min_confidence: 0.83,
+    },
+  });
+
+  assert.equal(policy.shadowClassifier.enabled, true);
+  assert.equal(policy.shadowClassifier.mode, "shadow");
+  assert.equal(policy.shadowClassifier.provider, "snake-provider");
+  assert.equal(policy.shadowClassifier.model, "snake-classifier");
+  assert.equal(policy.shadowClassifier.minConfidence, 0.83);
+  assert.equal(policy.shadow_classifier.min_confidence, 0.83);
+});
+
+test("createRuntimePlanWithSupervisor records shadow classifier savings without changing routing", async () => {
+  const taskDrafts = [
+    {
+      task_id: "S-001",
+      title: "Update docs",
+      goal: "Update a documentation page. SECRET_SHOULD_NOT_LEAK raw file content patch body command output worker prompt raw provider response",
+      difficulty: "L2",
+      risk: "medium",
+      context_need: "medium",
+      verification: "medium",
+      final_verification: false,
+      depends_on: [],
+      allowed_files: [],
+      forbidden_actions: ["modify files"],
+      acceptance: ["documentation scope is summarized without api_key=SECRET_SHOULD_NOT_LEAK"],
+      expected_output: ["summary"],
+    },
+    {
+      task_id: "S-002",
+      title: "Patch runtime code",
+      goal: "Modify runtime behavior in one source file.",
+      difficulty: "L1",
+      risk: "low",
+      context_need: "low",
+      verification: "easy",
+      final_verification: false,
+      depends_on: ["S-001"],
+      allowed_files: ["src/runtime/router.js"],
+      forbidden_actions: ["edit files outside allowlist"],
+      acceptance: ["patch remains inside allowlist"],
+      expected_output: ["patch"],
+    },
+  ];
+  const baseline = createRuntimePlan({ request: "Classify cost savings.", taskDrafts });
+  const generatedRequests = [];
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Classify cost savings.",
+    taskDrafts,
+    policy: {
+      budget: {
+        maxCostPerRun: 0.01,
+        maxCallsPerRun: 20,
+        maxWorkerRetries: 8,
+      },
+      shadowClassifier: {
+        enabled: true,
+        provider: "test-provider",
+        model: "test-classifier",
+        minConfidence: 0.7,
+      },
+    },
+    generate: async (request) => {
+      generatedRequests.push(request);
+      return {
+        provider: request.provider,
+        model: request.model,
+        text: JSON.stringify({
+          recommendations: [
+            {
+              task_id: "S-001",
+              difficulty: "L1",
+              risk: "low",
+              context_need: "low",
+              verification: "easy",
+              recommended_tier: "cheap",
+              confidence: 0.91,
+              reasoning: ["Read-only metadata-only docs analysis"],
+            },
+            {
+              task_id: "S-002",
+              difficulty: "L1",
+              risk: "low",
+              context_need: "low",
+              verification: "easy",
+              recommended_tier: "cheap",
+              confidence: 0.94,
+              reasoning: ["Small source patch"],
+            },
+          ],
+        }),
+      };
+    },
+  });
+
+  assert.deepEqual(plan.routingTrace, baseline.routingTrace);
+  assert.deepEqual(plan.routingTrace[0].selected_model, baseline.routingTrace[0].selected_model);
+  assert.equal(plan.tasks[0].modelTier, "standard");
+  assert.equal(plan.tasks[1].modelTier, "standard");
+  assert.equal(generatedRequests.length, 1);
+  assert.equal(generatedRequests[0].provider, "test-provider");
+  assert.equal(generatedRequests[0].model, "test-classifier");
+  const classifierUserPayload = generatedRequests[0].messages.find((message) => message.role === "user")?.content ?? "";
+  assert.doesNotMatch(
+    classifierUserPayload,
+    /SECRET_SHOULD_NOT_LEAK|raw file content|patch body|command output|worker prompt|raw provider response|api_key=/i
+  );
+
+  assert.equal(plan.shadowClassifier.status, "completed");
+  assert.equal(plan.shadow_classifier.status, "completed");
+  assert.equal(plan.shadowClassifier.summary.potentialSavingsTasks, 1);
+  assert.equal(plan.shadowClassifier.summary.blockedBySafetyFloorTasks, 1);
+  assert.equal(plan.shadowClassifier.summary.potentialSavingsUsd, 0.04);
+  assert.equal(plan.shadowClassifier.recommendations[0].category, "potential_savings");
+  assert.equal(plan.shadowClassifier.recommendations[1].category, "blocked_by_safety_floor");
+});
+
+test("Shadow classifier request uses metadata only and includes deterministic selected model", async () => {
+  const leakedStrings = [
+    "OPENAI_API_KEY=sk-test-secret",
+    "Authorization: Bearer bearer-secret",
+    "diff --git a/src/a.js b/src/a.js",
+    "@@ -1 +1 @@",
+    "command output: npm test failed with private path",
+    "worker prompt: read raw provider response",
+  ];
+  const generatedRequests = [];
+  await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Classify metadata-only savings.",
+    taskDrafts: [
+      {
+        task_id: "META-001",
+        title: leakedStrings[0],
+        goal: leakedStrings.slice(1).join("\n"),
+        difficulty: "L2",
+        risk: "medium",
+        context_need: "medium",
+        verification: "medium",
+        final_verification: false,
+        depends_on: [],
+        allowed_files: [],
+        forbidden_actions: ["modify files"],
+        acceptance: leakedStrings,
+        expected_output: ["summary"],
+      },
+    ],
+    policy: {
+      shadowClassifier: {
+        enabled: true,
+        provider: "test-provider",
+        model: "test-classifier",
+      },
+    },
+    generate: async (request) => {
+      generatedRequests.push(request);
+      return {
+        text: JSON.stringify({
+          recommendations: [{ task_id: "META-001", recommended_tier: "cheap", confidence: 0.9 }],
+        }),
+      };
+    },
+  });
+
+  const payload = JSON.parse(generatedRequests[0].messages.find((message) => message.role === "user").content);
+  const task = payload.tasks[0];
+  const serializedPayload = JSON.stringify(payload);
+
+  for (const leaked of leakedStrings) {
+    assert.equal(serializedPayload.includes(leaked), false);
+  }
+  assert.equal(task.title, undefined);
+  assert.equal(task.goal, undefined);
+  assert.equal(task.acceptance, undefined);
+  assert.equal(typeof task.title_length, "number");
+  assert.ok(task.title_length > 0);
+  assert.ok(task.goal_length > 0);
+  assert.equal(task.acceptance_count, leakedStrings.length);
+  assert.deepEqual(task.selected_model, {
+    provider: "runtime-default",
+    model: "standard-placeholder",
+    tier: "standard",
+  });
+});
+
+test("Shadow classifier cannot bypass final review, high-risk approval, provider selection, or budget refusal", async () => {
+  const taskDrafts = [
+    {
+      task_id: "G-001",
+      title: "High risk migration",
+      goal: "Plan a risky migration.",
+      difficulty: "L4",
+      risk: "high",
+      context_need: "high",
+      verification: "hard",
+      final_verification: false,
+      depends_on: [],
+      allowed_files: [],
+      forbidden_actions: ["skip approval"],
+      acceptance: ["approval remains required"],
+      expected_output: ["plan"],
+    },
+    {
+      task_id: "G-002",
+      title: "Final review",
+      goal: "Review final evidence.",
+      difficulty: "L4",
+      risk: "high",
+      context_need: "high",
+      verification: "hard",
+      final_verification: true,
+      depends_on: ["G-001"],
+      allowed_files: [],
+      forbidden_actions: ["skip final review"],
+      acceptance: ["final review remains premium"],
+      expected_output: ["review"],
+    },
+  ];
+  const baseline = createRuntimePlan({
+    request: "Protect routing gates.",
+    taskDrafts,
+    budgetPolicy: {
+      maxCostPerRun: 0.01,
+      maxCallsPerRun: 20,
+      maxRetryCount: 8,
+    },
+  });
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Protect routing gates.",
+    taskDrafts,
+    budgetPolicy: {
+      maxCostPerRun: 0.01,
+      maxCallsPerRun: 20,
+      maxRetryCount: 8,
+    },
+    policy: {
+      budget: {
+        maxCostPerRun: 0.01,
+        maxCallsPerRun: 20,
+        maxWorkerRetries: 8,
+      },
+      shadowClassifier: {
+        enabled: true,
+        provider: "test-provider",
+        model: "test-classifier",
+      },
+    },
+    generate: async () => ({
+      text: JSON.stringify({
+        recommendations: [
+          { task_id: "G-001", recommended_tier: "cheap", confidence: 0.99, reasoning: ["Try cheaper"] },
+          { task_id: "G-002", recommended_tier: "cheap", confidence: 0.99, reasoning: ["Try cheaper"] },
+        ],
+      }),
+    }),
+  });
+
+  assert.deepEqual(plan.routingTrace, baseline.routingTrace);
+  assert.equal(plan.routingTrace[0].selected_model.tier, "premium");
+  assert.equal(plan.routingTrace[1].selected_model.tier, "premium");
+  assert.equal(plan.tasks[0].modelTier, "premium");
+  assert.equal(plan.tasks[1].modelTier, "premium");
+  assert.equal(plan.approvalRequired, true);
+  assert.equal(plan.approval.status, "required");
+  assert.equal(plan.budgetStatus.allowed, false);
+  assert.ok(plan.budgetStatus.violations.some((violation) => violation.code === "budget.cost.exceeded"));
+  assert.deepEqual(
+    plan.shadowClassifier.recommendations.map((recommendation) => recommendation.category),
+    ["blocked_by_safety_floor", "blocked_by_safety_floor"]
+  );
+});
+
+test("Shadow classifier low-confidence and malformed outputs fail soft", async () => {
+  const lowConfidencePlan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Classify low confidence task.",
+    taskDrafts: [
+      {
+        task_id: "LC-001",
+        title: "Review release note",
+        goal: "Review release note metadata.",
+        difficulty: "L2",
+        risk: "medium",
+        context_need: "medium",
+        verification: "medium",
+        depends_on: [],
+        allowed_files: [],
+        forbidden_actions: ["modify files"],
+        acceptance: ["review is summarized"],
+        expected_output: ["summary"],
+      },
+    ],
+    policy: {
+      shadowClassifier: {
+        enabled: true,
+        provider: "test-provider",
+        model: "test-classifier",
+        minConfidence: 0.8,
+      },
+    },
+    generate: async () => ({
+      text: JSON.stringify({
+        recommendations: [
+          {
+            task_id: "LC-001",
+            recommended_tier: "cheap",
+            confidence: 0.4,
+            reasoning: ["Maybe easy"],
+          },
+        ],
+      }),
+    }),
+  });
+
+  assert.equal(lowConfidencePlan.shadowClassifier.status, "completed");
+  assert.equal(lowConfidencePlan.shadowClassifier.recommendations[0].category, "ignored_low_confidence");
+  assert.equal(lowConfidencePlan.routingTrace[0].model_tier, "standard");
+
+  const malformedPlan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Classify malformed output.",
+    policy: {
+      shadowClassifier: {
+        enabled: true,
+        provider: "test-provider",
+        model: "test-classifier",
+      },
+    },
+    generate: async () => ({ text: "not json" }),
+  });
+
+  assert.equal(malformedPlan.shadowClassifier.status, "unavailable");
+  assert.ok(malformedPlan.shadowClassifier.warnings.includes("shadow_classifier.output_malformed"));
+  assert.ok(malformedPlan.validation.valid);
+});
+
+test("Shadow classifier parses structured provider output", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Classify structured provider output.",
+    taskDrafts: [
+      {
+        task_id: "SO-001",
+        title: "Review metadata",
+        goal: "Review metadata only.",
+        difficulty: "L2",
+        risk: "medium",
+        context_need: "medium",
+        verification: "medium",
+        depends_on: [],
+        allowed_files: [],
+        forbidden_actions: ["modify files"],
+        acceptance: ["summary exists"],
+        expected_output: ["summary"],
+      },
+    ],
+    policy: {
+      shadowClassifier: {
+        enabled: true,
+        provider: "test-provider",
+        model: "test-classifier",
+      },
+    },
+    generate: async () => ({
+      provider: "test-provider",
+      model: "test-classifier",
+      structuredOutput: {
+        recommendations: [
+          {
+            task_id: "SO-001",
+            recommended_tier: "cheap",
+            confidence: 0.9,
+            reasoning: ["Structured output"],
+          },
+        ],
+      },
+    }),
+  });
+
+  assert.equal(plan.shadowClassifier.status, "completed");
+  assert.equal(plan.shadowClassifier.recommendations[0].category, "potential_savings");
+});
+
+test("Runtime report exposes shadow classifier summary in JSON and Markdown", () => {
+  const plan = createRuntimePlan({
+    request: "Report shadow classifier.",
+    taskDrafts: [
+      {
+        task_id: "R-001",
+        title: "Report task",
+        goal: "Summarize report metadata.",
+        difficulty: "L2",
+        risk: "medium",
+        context_need: "medium",
+        verification: "medium",
+        depends_on: [],
+        allowed_files: [],
+        forbidden_actions: ["modify files"],
+        acceptance: ["summary exists"],
+        expected_output: ["summary"],
+      },
+    ],
+  });
+  const shadowClassifier = {
+    enabled: true,
+    mode: "shadow",
+    provider: "test-provider",
+    model: "test-classifier",
+    status: "completed",
+    summary: {
+      potentialSavingsUsd: 0.04,
+      potential_savings_usd: 0.04,
+      potentialSavingsTasks: 1,
+      potential_savings_tasks: 1,
+      blockedBySafetyFloorTasks: 0,
+      blocked_by_safety_floor_tasks: 0,
+      ignoredLowConfidenceTasks: 0,
+      ignored_low_confidence_tasks: 0,
+    },
+    recommendations: [],
+    warnings: [],
+  };
+  const report = runtimeIndex.createReport({
+    runId: "run_shadow_report",
+    status: "planned",
+    request: "Report shadow classifier.",
+    plan: {
+      ...plan,
+      shadowClassifier,
+      shadow_classifier: shadowClassifier,
+    },
+    modelCalls: [],
+    workerAttempts: [],
+    verification: [],
+    events: [],
+  });
+  const markdown = runtimeIndex.formatReportMarkdown(report);
+
+  assert.equal(report.shadowClassifier.status, "completed");
+  assert.equal(report.shadow_classifier.summary.potential_savings_usd, 0.04);
+  assert.ok(report.exportFormat.sections.includes("shadow_classifier"));
+  assert.match(markdown, /Shadow LLM Classifier/);
+  assert.match(markdown, /potential savings: USD 0\.04 across 1 task/);
+});
+
 test("createRuntimePlanWithSupervisor treats supervisor read-only file context as references", async () => {
   const readOnlyDraft = {
     task_id: "SP-READ",

@@ -21,6 +21,23 @@ export const DEFAULT_POLICY_CONFIG = {
     maxRetryRateForDowngrade: 0.15,
     maxEscalationRateForDowngrade: 0.1,
   },
+  shadowClassifier: {
+    enabled: false,
+    mode: "off",
+    provider: null,
+    model: null,
+    minConfidence: 0.7,
+    warnings: [],
+  },
+  shadow_classifier: {
+    enabled: false,
+    mode: "off",
+    provider: null,
+    model: null,
+    minConfidence: 0.7,
+    min_confidence: 0.7,
+    warnings: [],
+  },
   safety: {
     requireHumanApprovalForHighRisk: true,
     requireTestsForCodeChanges: false,
@@ -59,6 +76,7 @@ export function normalizePolicyConfig(policy = {}) {
   normalizeBudgetAliases(normalized.budget);
   normalizeRoutingAliases(normalized.routing);
   normalizeLearningAliases(normalized.learning);
+  normalizeShadowClassifierAliases(normalized, input);
   normalizeSafetyAliases(normalized.safety);
   normalized.workspace.allowedFiles = uniqueStrings(normalized.workspace.allowedFiles);
   normalized.workspace.blockedFiles = uniqueStrings(normalized.workspace.blockedFiles);
@@ -74,6 +92,12 @@ export function validatePolicyConfig(policy = {}) {
 
   if (hasOwn(input, "learning") && !isPlainObject(input.learning)) {
     errors.push(error("policy.learning.object.invalid", "policy.learning"));
+  }
+  if (hasOwn(input, "shadowClassifier") && !isPlainObject(input.shadowClassifier)) {
+    errors.push(error("policy.shadow_classifier.object.invalid", "policy.shadowClassifier"));
+  }
+  if (hasOwn(input, "shadow_classifier") && !isPlainObject(input.shadow_classifier)) {
+    errors.push(error("policy.shadow_classifier.object.invalid", "policy.shadow_classifier"));
   }
 
   if (!isNonNegativeNumber(normalized.budget.maxCostPerRun)) {
@@ -110,6 +134,15 @@ export function validatePolicyConfig(policy = {}) {
     if (!isRatio(normalized.learning[field])) {
       errors.push(error("policy.learning.threshold.invalid", `policy.learning.${field}`));
     }
+  }
+  if (typeof normalized.shadowClassifier.enabled !== "boolean") {
+    errors.push(error("policy.shadow_classifier.enabled.invalid", "policy.shadowClassifier.enabled"));
+  }
+  if (!["off", "shadow"].includes(normalized.shadowClassifier.mode)) {
+    errors.push(error("policy.shadow_classifier.mode.invalid", "policy.shadowClassifier.mode"));
+  }
+  if (!isRatio(normalized.shadowClassifier.minConfidence)) {
+    errors.push(error("policy.shadow_classifier.min_confidence.invalid", "policy.shadowClassifier.minConfidence"));
   }
 
   if (hasOwn(input.workspace, "allowedFiles") && !isStringArray(input.workspace.allowedFiles)) {
@@ -483,6 +516,49 @@ function normalizeLearningAliases(learning) {
       `policy.learning.mode.${requestedMode}.normalized_to_shadow`,
     ]);
   }
+}
+
+function normalizeShadowClassifierAliases(policy, input = {}) {
+  const shadow = deepMerge(
+    DEFAULT_POLICY_CONFIG.shadowClassifier,
+    isPlainObject(input.shadow_classifier) ? input.shadow_classifier : {}
+  );
+  const explicitCamel = isPlainObject(input.shadowClassifier) ? input.shadowClassifier : {};
+  const mergedShadow = deepMerge(shadow, explicitCamel);
+  Object.assign(shadow, mergedShadow);
+  shadow.enabled = hasOwn(shadow, "enabled") ? shadow.enabled : false;
+  shadow.mode = hasOwn(shadow, "mode") ? shadow.mode : shadow.enabled ? "shadow" : "off";
+  shadow.provider = hasOwn(shadow, "provider") ? shadow.provider : null;
+  shadow.model = hasOwn(shadow, "model") ? shadow.model : null;
+  shadow.minConfidence =
+    hasOwn(shadow, "min_confidence") ? shadow.min_confidence : shadow.minConfidence;
+  shadow.minConfidence =
+    typeof shadow.minConfidence === "number" ? shadow.minConfidence : DEFAULT_POLICY_CONFIG.shadowClassifier.minConfidence;
+  shadow.warnings = uniqueStrings(shadow.warnings ?? []);
+
+  if (shadow.enabled === false) {
+    shadow.mode = "off";
+  } else if (shadow.mode === "off") {
+    shadow.mode = "shadow";
+  } else if (shadow.mode === "advisory" || shadow.mode === "auto") {
+    const requestedMode = shadow.mode;
+    shadow.mode = "shadow";
+    shadow.requestedMode = requestedMode;
+    shadow.requested_mode = requestedMode;
+    shadow.warnings = uniqueStrings([
+      ...shadow.warnings,
+      `policy.shadow_classifier.mode.${requestedMode}.normalized_to_shadow`,
+    ]);
+  } else if (!shadow.mode) {
+    shadow.mode = "shadow";
+  }
+
+  policy.shadowClassifier = shadow;
+  policy.shadow_classifier = {
+    ...shadow,
+    min_confidence: shadow.minConfidence,
+    requested_mode: shadow.requestedMode ?? shadow.requested_mode,
+  };
 }
 
 function normalizeSafetyAliases(safety) {
