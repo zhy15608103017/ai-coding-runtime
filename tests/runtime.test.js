@@ -473,6 +473,52 @@ test("createRuntimePlanWithSupervisor treats supervisor read-only file context a
   assert.equal(readOnlyTask.model_tier, "cheap");
 });
 
+test("createRuntimePlanWithSupervisor treats read-only final review file context as references", async () => {
+  const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
+    request: "Final read-only review of src/runtime/router.js without modifying files.",
+    planning: {
+      supervisor: {
+        enabled: true,
+        provider: "openai-compatible",
+        model: "premium-planner",
+      },
+    },
+    generate: async () => ({
+      provider: "openai-compatible",
+      model: "premium-planner",
+      structuredOutput: {
+        tasks: [
+          {
+            task_id: "SP-FINAL-READ",
+            title: "Read-only final review of router routing rules",
+            goal: "Review src/runtime/router.js and verification evidence without modifying files.",
+            difficulty: "L4",
+            risk: "high",
+            context_need: "high",
+            verification: "hard",
+            final_verification: true,
+            depends_on: [],
+            allowed_files: ["src/runtime/router.js"],
+            forbidden_actions: ["modify files"],
+            acceptance: ["final review records routing and verification evidence"],
+            expected_output: ["final report"],
+          },
+        ],
+      },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      costEstimate: { currency: "USD", estimatedCost: 0.001, estimated_cost: 0.001 },
+      finishReason: "stop",
+      request: { attempts: 1, durationMs: 1, duration_ms: 1 },
+    }),
+  });
+
+  const readOnlyTask = plan.tasks.find((task) => task.task_id === "SP-FINAL-READ");
+
+  assert.equal(plan.supervisorPlanning.status, "used");
+  assert.deepEqual(readOnlyTask.allowed_files, []);
+  assert.deepEqual(readOnlyTask.referenced_files, ["src/runtime/router.js"]);
+});
+
 test("createRuntimePlanWithSupervisor detects read-only context from negated task text", async () => {
   const plan = await runtimeIndex.createRuntimePlanWithSupervisor({
     request: "plan only: inspect src/runtime/router.js without modifying files.",
