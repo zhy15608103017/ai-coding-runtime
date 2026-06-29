@@ -620,11 +620,11 @@ safety:
 
 **Tasks:**
 
-- [ ] Add local dashboard to inspect active and past runs.
-- [ ] Add task graph visualization.
-- [ ] Add verification timeline.
-- [ ] Add cost breakdown UI.
-- [ ] Add model performance view.
+- [x] Add local dashboard to inspect active and past runs.
+- [x] Add task graph visualization.
+- [x] Add verification timeline.
+- [x] Add cost breakdown UI.
+- [x] Add model performance view.
 - [ ] Draft hosted team mode architecture.
 - [ ] Draft IDE extension architecture.
 

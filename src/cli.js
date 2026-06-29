@@ -27,6 +27,8 @@ export async function runCli(argv, io = process) {
         return await executeCommand(rest, io);
       case "report":
         return await reportCommand(rest, io);
+      case "dashboard":
+        return await dashboardCommand(rest, io);
       case "audit":
         return await auditCommand(rest, io);
       case "history":
@@ -188,6 +190,35 @@ async function reportCommand(args, io) {
     io.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } else {
     io.stdout.write(formatReportMarkdown(report));
+  }
+
+  return 0;
+}
+
+async function dashboardCommand(args, io) {
+  const { positional, options } = parseArgs(args);
+  const [runId] = positional;
+
+  if (!runId) {
+    throw new Error("dashboard requires a run id.");
+  }
+
+  if (!options.out) {
+    throw new Error("dashboard requires --out <file>.");
+  }
+
+  const config = await loadRuntimeConfig();
+  const store = new FileExecutionStore({ workspace: config.storage.directory });
+  const dashboard = await callRuntimeTool(
+    "runtime_dashboard",
+    { runId, out: options.out },
+    { store, runtimeOptions: runtimeOptionsFromConfig(config) }
+  );
+
+  if (options.json) {
+    io.stdout.write(`${JSON.stringify({ status: "ok", ...dashboard }, null, 2)}\n`);
+  } else {
+    io.stdout.write(`${dashboard.message}\n`);
   }
 
   return 0;
@@ -549,6 +580,9 @@ function parseArgs(args) {
     } else if (arg === "--from-file") {
       options.fromFile = args[index + 1];
       index += 1;
+    } else if (arg === "--out") {
+      options.out = args[index + 1];
+      index += 1;
     } else if (arg === "--apply") {
       options.apply = true;
     } else if (arg === "--no-apply") {
@@ -586,6 +620,7 @@ Usage:
   ai-coding-runtime approve <run-id> [--json]
   ai-coding-runtime worker-result <run-id> <task-id> --from-file result.json [--apply] [--json]
   ai-coding-runtime report <run-id> [--json|--markdown]
+  ai-coding-runtime dashboard <run-id> --out dashboard.html [--json]
   ai-coding-runtime audit <run-id> --json
   ai-coding-runtime history export <file> [--json]
   ai-coding-runtime history import <file> [--json]

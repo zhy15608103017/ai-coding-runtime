@@ -11,6 +11,7 @@ The runtime can also accept structured worker results, validate patch boundaries
 Phase 8 adds host-tool setup guides, sample MCP configs, prompt samples, and smoke-test checklists for Codex Desktop, Codex CLI, Cursor, and OpenCode. Start with `docs/integrations/README.md` for the guide index.
 Phase 9 expands final reports with changed files, per-task cost attribution, unattributed model usage, routing and escalation reasons, failure categories, trace viewer data, export metadata, and historical model reliability metrics.
 Phase 10 adds team policy metadata, secret redaction, file and command allowlists, and completed-run audit export. Host tools should surface `policyStatus.violations`, keep approval gates visible for high-risk work, and use `runtime_audit` through MCP `tools/call` or `GET /api/runs/:runId/audit` when a completed run needs redacted evidence for team review.
+Phase 12 adds a static local dashboard generated from report data. Use `ai-coding-runtime dashboard <run-id> --out dashboard.html` or MCP `runtime_dashboard` with `{ "runId": "...", "out": "dashboard.html" }` to inspect run status, task graph, verification timeline, cost breakdown, model performance samples, and shadow classifier recommendations without starting a server.
 Phase 3 responses include task contract validation metadata and a deterministic planning prompt. If a plan contains medium or high risk tasks, `runtime_run` creates a run with status `approval_required`; `runtime_approve` records human approval and moves the run to `approved`.
 Phase 4 responses add classifier, model registry, routing policy, budget policy, escalation policy, budget status, policy status, and routing trace metadata. If `budgetStatus.allowed` or `policyStatus.allowed` is `false`, `runtime_run` refuses persisted execution with a policy error.
 Explicit read-only planning prompts such as `plan only`, `read-only`, or `不修改文件` produce low-risk task contracts and can be persisted with status `planned`.
@@ -26,6 +27,7 @@ MCP tools:
 - `runtime_collect`
 - `runtime_verify`
 - `runtime_report`
+- `runtime_dashboard`
 - `runtime_cancel`
 - `runtime_approve`
 - `runtime_provider_health`
@@ -33,6 +35,7 @@ MCP tools:
 - `runtime_submit_worker_result`
 
 `runtime_plan` and `runtime_estimate` include `taskGraph`, `approval`, `validation`, `planningPrompt`, `planReport`, `modelRegistry`, `routingPolicy`, `budgetPolicy`, `budgetStatus`, `policyConfig`, `policyValidation`, `policyStatus`, `escalationPolicy`, and `routingTrace`. When `planning.supervisor.enabled` is configured, they can ask a supervisor model to draft dynamic task contracts before local routing; those plans include `supervisorPlanning` / `supervisor_planning`, and malformed supervisor output falls back to deterministic planning. When `policy.shadowClassifier.enabled` is configured with a provider and model, plan and estimate responses also include `shadowClassifier` / `shadow_classifier` advisory metadata. Shadow classifier output can show potential cheaper-tier savings, safety-floor blocks, and low-confidence ignored recommendations, but it never changes `modelTier`, `routingTrace`, approval, execution, retries, verification, or provider selection. `planReport` is the Phase 3 plan review output for host tools to show before execution.
+The dashboard is intentionally static in this phase. It does not add a hosted UI, auth surface, live polling, or edit controls; it writes a single HTML file from the same redacted report data used by `runtime_report`. MCP callers can invoke `runtime_dashboard`, then open the returned `path` in a browser.
 Use `runtime_provider_health` before real generation to confirm local API key and model configuration. Use `runtime_model_generate` only when the host tool intentionally wants Runtime to call a configured provider directly.
 Use `runtime_submit_worker_result` after a run is approved to submit a worker's structured patch result. The worker context pack is built from task `allowed_files` plus read-only `referenced_files`. The result must include `patch`, `explanation`, `verificationNotes`, `confidence`, `filesTouched`, and acceptance evidence for every task acceptance item. Runtime rejects patches outside `allowed_files` and worker results that explicitly include task `forbidden_actions`. Set `apply: true` only when the host tool wants Runtime to apply a validated text patch to the configured workspace.
 Use `runtime_verify` for runs in `planned`, `approved`, or `verification_failed`. Runs in `approval_required` should be approved first, then verified. The tool accepts `{ "runId": "...", "verification": { ... } }` when a host wants to override the configured diff/test/lint/typecheck/custom commands or final review settings for a single run.

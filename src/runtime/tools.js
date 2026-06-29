@@ -1,8 +1,11 @@
 import { createRuntimePlanWithSupervisor } from "./supervisor-planner.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { reviewTaskAcceptance } from "./acceptance.js";
 import { executeRun } from "./execution.js";
 import { createRunInspection, formatInspectionMarkdown } from "./inspection.js";
 import { checkProviderHealth, generateModelResponse } from "./providers.js";
+import { createDashboardHtml } from "./dashboard.js";
 import { createReport, formatReportMarkdown } from "./report.js";
 import { RUN_STATUS, canVerifyRun } from "./status.js";
 import { runSupervisorReview } from "./supervisor.js";
@@ -63,6 +66,11 @@ export const RUNTIME_TOOLS = [
       required: ["runId"],
       additionalProperties: false,
     },
+  },
+  {
+    name: "runtime_dashboard",
+    description: "Write a static HTML dashboard for a runtime run and return the file path.",
+    inputSchema: dashboardSchema(),
   },
   {
     name: "runtime_audit",
@@ -148,6 +156,8 @@ export async function callRuntimeTool(name, args, { store, runtimeOptions = {} }
       return verifyRun(requireRunId(args), store, withVerificationOverride(runtimeOptions, args));
     case "runtime_report":
       return reportRun(requireRunId(args), args, store, runtimeOptions);
+    case "runtime_dashboard":
+      return dashboardRun(requireRunId(args), args, store, runtimeOptions);
     case "runtime_audit":
       return auditRun(requireRunId(args), store, runtimeOptions);
     case "runtime_cancel":
@@ -569,6 +579,22 @@ async function reportRun(runId, args, store, runtimeOptions = {}) {
   return report;
 }
 
+async function dashboardRun(runId, args, store, runtimeOptions = {}) {
+  const outPath = requireOutPath(args);
+  const report = await buildReport(runId, store, runtimeOptions);
+  const html = createDashboardHtml(report);
+  await mkdir(dirname(outPath), { recursive: true });
+  await writeFile(outPath, html, "utf8");
+
+  return {
+    runId,
+    format: "html",
+    path: outPath,
+    bytes: Buffer.byteLength(html, "utf8"),
+    message: `Dashboard written to ${outPath}`,
+  };
+}
+
 async function auditRun(runId, store, runtimeOptions = {}) {
   const record = await store.readRecord(runId);
   const historyRecords =
@@ -583,6 +609,22 @@ async function auditRun(runId, store, runtimeOptions = {}) {
     policy: runtimeOptions.policy,
   });
   return createAuditExport(record, { report, policy: runtimeOptions.policy });
+}
+
+async function buildReport(runId, store, runtimeOptions = {}) {
+  const record = await store.readRecord(runId);
+  const historyRecords =
+    typeof store.listRecords === "function" ? await store.listRecords() : [];
+  const importedHistoryRecords =
+    typeof store.listImportedLearningRecords === "function"
+      ? await store.listImportedLearningRecords()
+      : [];
+  const report = createReport(record, {
+    historyRecords,
+    importedHistoryRecords,
+    policy: runtimeOptions.policy,
+  });
+  return report;
 }
 
 async function cancelRun(runId, args, store) {
@@ -801,6 +843,15 @@ function requireTaskId(args) {
   return args.taskId.trim();
 }
 
+function requireOutPath(args) {
+  const out = args?.out ?? args?.path;
+  if (!out || typeof out !== "string" || out.trim().length === 0) {
+    throw new Error("out is required.");
+  }
+
+  return resolve(out.trim());
+}
+
 function requestSchema() {
   return {
     type: "object",
@@ -843,6 +894,20 @@ function verifySchema() {
       verification: { type: "object" },
     },
     required: ["runId"],
+    additionalProperties: false,
+  };
+}
+
+function dashboardSchema() {
+  return {
+    type: "object",
+    properties: {
+      runId: { type: "string" },
+      out: { type: "string" },
+      path: { type: "string" },
+    },
+    required: ["runId"],
+    anyOf: [{ required: ["out"] }, { required: ["path"] }],
     additionalProperties: false,
   };
 }
