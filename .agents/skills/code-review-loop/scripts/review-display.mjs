@@ -1,3 +1,4 @@
+import { renderReviewLimitValue } from "./review-limits.mjs";
 import { formatReviewTime } from "./time-format.mjs";
 
 export function withDisplayFields(result = {}) {
@@ -37,6 +38,9 @@ export function buildHistoryEntry({ result, options = {}, context = {}, resolved
     summary: outputResult.summary || "",
     reviewers: buildReviewers(options, resolved),
     profile: context?.profile?.selected || options.profile || "standard",
+    limits: {
+      maxReviewRounds: renderReviewLimitValue(context?.reviewLimits?.maxReviewRounds ?? options.maxReviewRounds),
+    },
     scope: {
       staged: Boolean(context?.scope?.staged),
       base: context?.scope?.base || "HEAD",
@@ -71,6 +75,7 @@ export function renderHistoryMarkdownEntry(entry) {
     + `- 置信度: ${entry.confidence ?? 0}\n`
     + `- 审核模型: ${renderReviewers(entry.reviewers)}\n`
     + `- 审核配置: ${entry.profile}\n`
+    + `- 审核轮数上限: ${entry.limits?.maxReviewRounds || "3"}\n`
     + `- 变更文件数: ${entry.changedFileCount ?? "未知"}\n`
     + `- 审核详情: ${entry.details.runReportPath || entry.details.latestReportPath || "未知"}\n`
     + `- 结构化结果: ${entry.details.runResultPath || entry.details.latestResultPath || "未知"}\n`

@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { redactSecrets } from "./redact-secrets.mjs";
 import { renderReviewBrief } from "./render-brief.mjs";
+import {
+  parseMaxReviewRoundsValue,
+  resolveMaxReviewRounds,
+  resolveReviewLimits,
+} from "./review-limits.mjs";
 import { applyReviewProfile, maxProfileFileBytes, resolveReviewProfile } from "./review-profile.mjs";
 import { formatReviewTime } from "./time-format.mjs";
 
@@ -15,6 +20,7 @@ const FILE_CONTEXT_CACHE_VERSION = "v2-redact-2026-06-15";
 const DEFAULT_MAX_FILE_BYTES = 120000;
 
 export { redactSecrets, renderReviewBrief, getGitRoot };
+export { resolveMaxReviewRounds, resolveReviewLimits };
 
 export function parseArgs(argv) {
   const args = {
@@ -94,11 +100,21 @@ export function parseArgs(argv) {
     } else if (arg === "--history-limit" && next) {
       args.historyLimit = Number(next);
       index += 1;
+    } else if (arg === "--max-review-rounds" && next) {
+      args.maxReviewRounds = parseMaxReviewRoundsValue(next);
+      args.explicitOptions.maxReviewRounds = true;
+      index += 1;
     } else if (arg === "--provider" && next) {
       args.provider = next;
       index += 1;
     } else if (arg === "--transport" && next) {
       args.transport = next;
+      index += 1;
+    } else if (arg === "--local-cli" && next) {
+      args.localCli = next;
+      index += 1;
+    } else if (arg === "--local-cli-args" && next) {
+      args.localCliArgs = next;
       index += 1;
     } else if (arg === "--cli-command" && next) {
       args.cliCommand = next;
@@ -121,6 +137,12 @@ export function parseArgs(argv) {
     } else if (arg === "--second-transport" && next) {
       args.secondTransport = next;
       index += 1;
+    } else if (arg === "--second-local-cli" && next) {
+      args.secondLocalCli = next;
+      index += 1;
+    } else if (arg === "--second-local-cli-args" && next) {
+      args.secondLocalCliArgs = next;
+      index += 1;
     } else if (arg === "--second-cli-command" && next) {
       args.secondCliCommand = next;
       index += 1;
@@ -134,6 +156,14 @@ export function parseArgs(argv) {
     } else if (arg === "--second-retries" && next) {
       args.secondRetries = Number(next);
       args.explicitOptions.secondRetries = true;
+      index += 1;
+    } else if (arg === "--second-retry-fast-failure-ms" && next) {
+      args.secondRetryFastFailureMs = Number(next);
+      args.explicitOptions.secondRetryFastFailureMs = true;
+      index += 1;
+    } else if (arg === "--second-retry-delay-ms" && next) {
+      args.secondRetryDelayMs = Number(next);
+      args.explicitOptions.secondRetryDelayMs = true;
       index += 1;
     } else if (arg === "--second-confidence-threshold" && next) {
       args.secondConfidenceThreshold = Number(next);
@@ -164,6 +194,14 @@ export function parseArgs(argv) {
     } else if (arg === "--retries" && next) {
       args.retries = Number(next);
       args.explicitOptions.retries = true;
+      index += 1;
+    } else if (arg === "--retry-fast-failure-ms" && next) {
+      args.retryFastFailureMs = Number(next);
+      args.explicitOptions.retryFastFailureMs = true;
+      index += 1;
+    } else if (arg === "--retry-delay-ms" && next) {
+      args.retryDelayMs = Number(next);
+      args.explicitOptions.retryDelayMs = true;
       index += 1;
     } else if (arg === "--max-files" && next) {
       args.maxFiles = Number(next);
@@ -257,6 +295,7 @@ export async function collectReviewContext(options = {}) {
     generatedAt: formatReviewTime(new Date(), options),
     scope,
     profile,
+    reviewLimits: resolveReviewLimits(options),
     maxBriefBytes: options.maxBriefBytes,
     status,
     diffStat,

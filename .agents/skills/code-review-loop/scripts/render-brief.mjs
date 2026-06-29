@@ -1,4 +1,5 @@
 import { redactSecrets } from "./redact-secrets.mjs";
+import { renderReviewLimitValue } from "./review-limits.mjs";
 
 export function renderReviewBrief(context) {
   const docBlocks = context.docs
@@ -10,6 +11,7 @@ export function renderReviewBrief(context) {
   const verification = renderVerifications(context.verification);
   const scope = renderScope(context.scope);
   const profile = renderProfile(context.profile);
+  const reviewLimits = renderReviewLimits(context.reviewLimits);
   const codegraph = renderCodeGraph(context.codegraphContext);
 
   const brief = `# 代码审核上下文
@@ -29,6 +31,10 @@ ${scope}
 ## 审核配置
 
 ${profile}
+
+## 审核闭环限制
+
+${reviewLimits}
 
 ## Git 状态
 
@@ -144,6 +150,12 @@ function renderProfile(profile = {}) {
     "",
     "已应用选项:",
     appliedOptions,
+  ].join("\n");
+}
+
+function renderReviewLimits(reviewLimits = {}) {
+  return [
+    `最大审核/修复轮数: ${renderReviewLimitValue(reviewLimits.maxReviewRounds)}`,
   ].join("\n");
 }
 
